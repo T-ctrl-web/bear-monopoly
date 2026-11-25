@@ -145,12 +145,12 @@ const bears = {};                 // playerId -> {px, py}（棋盘逻辑坐标�
 const TILE = 72;                  // 1 格逻辑边长
 let decoTrees = [];               // 中央装饰（初始化时固定）
 
-// 32 格 -> 10x8 方环网格坐标（与 v0.1 起一致，横屏天然适配 10 宽 × 8 高）
+// 32 格 -> 10x8 方环网格坐标（v0.5 修复：左列原公式与左下角重叠且漏一格，导致首尾断开）
 function tileGrid(pos) {
   if (pos <= 9)        return { x: -4.5 + pos,       z: -3.5 };
   if (pos <= 15)       return { x: 4.5,              z: -2.5 + (pos - 10) };
   if (pos <= 25)       return { x: 4.5 - (pos - 16), z: 3.5 };
-  return { x: -4.5, z: 3.5 - (pos - 26) };
+  return { x: -4.5, z: 2.5 - (pos - 26) };   // 26→2.5 … 31→-2.5，首尾与起点格相接
 }
 // 网格 -> 棋盘逻辑像素（棋盘中心为原点）
 function tilePx(pos) {
@@ -819,22 +819,26 @@ async function jarFlow(p) {
   updateUI();
 }
 
-/* ---------------- UI 更新 ---------------- */
+/* ---------------- UI 更新（v0.5：右上角紧凑徽章，点击看详情） ---------------- */
+function playerBadges(p) {
+  return (p.holdEscape ? "🎫逃脱卡 " : "") + (p.holdPromo ? "🎫大促销 " : "") + (p.hasLoaned ? "🍯已借款" : "");
+}
+
+function showPlayerCard(p) {
+  showModal({
+    title: `${p.alive ? "" : "☠ "}${p.name}（${p.char.species}）${p.isHuman ? " · 你" : ""}`,
+    body: `特性：${p.char.trait}\n现金：🍯 ${p.cash}${p.debt > 0 ? `（欠债 ${p.debt}）` : ""}\n圈数：${p.laps}\n产业 ${p.props.length} 块：${p.props.map(t => `「${t.name}」Lv${t.level}`).join("、") || "无"}${playerBadges(p) ? "\n手牌：" + playerBadges(p).trim() : ""}`,
+    buttons: [{ label: "关闭", value: true, secondary: true }],
+  });
+}
+
 function updateUI() {
   playersEl.innerHTML = "";
   players.forEach((p, i) => {
     const c = document.createElement("div");
-    c.className = "player-card" + (i === turnIdx && running ? " current" : "") + (p.alive ? "" : " dead");
-    const badges =
-      (p.holdEscape ? `<span class="badge">🎫逃脱卡</span>` : "") +
-      (p.holdPromo ? `<span class="badge">🎫大促销</span>` : "") +
-      (p.hasLoaned ? `<span class="badge" style="background:#fbd3d0;color:#a33">已借款</span>` : "");
-    c.innerHTML = `
-      <div class="p-head"><span class="dot" style="background:#${p.color.toString(16).padStart(6, "0")}"></span>
-        ${p.name}${p.isHuman ? "（你）" : ""}${p.alive ? "" : " · 出局"}</div>
-      <div class="p-trait">${p.char.species} · ${p.char.trait}</div>
-      <div class="p-money">🍯 ${p.cash}${p.debt > 0 ? `<span class="debt">欠债 ${p.debt}</span>` : ""}</div>
-      <div class="p-props">产业 ${p.props.length} 块${badges ? " · " + badges : ""}</div>`;
+    c.className = "chip" + (i === turnIdx && running ? " current" : "") + (p.alive ? "" : " dead");
+    c.innerHTML = `<span class="dot" style="background:#${p.color.toString(16).padStart(6, "0")}"></span>${p.name}${p.isHuman ? "(你)" : ""}${p.alive ? "" : " ☠"}`;
+    c.onclick = () => showPlayerCard(p);
     playersEl.appendChild(c);
   });
   invalidate();
