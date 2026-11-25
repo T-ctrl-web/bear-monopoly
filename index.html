@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>熊熊大富翁 · 可玩原型 v0.5</title>
+<title>熊熊大富翁 · 可玩原型 v0.6</title>
 <style>
   :root {
     --honey: #f7b733;
@@ -52,33 +52,44 @@
   .chip.dead { opacity: .45; filter: grayscale(1); }
   .chip .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 
-  /* 日志 */
+  /* 日志：底部单行滚动条（v0.6 不再挡视野） */
   #log {
-    position: absolute; left: 14px; bottom: 14px; width: 330px; height: 190px;
-    background: var(--panel); border-radius: 12px; padding: 10px 12px;
-    box-shadow: 0 3px 10px rgba(0,0,0,.15); overflow-y: auto; font-size: 12px;
-    color: #5c4a33; line-height: 1.55;
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    max-width: min(680px, 86vw); height: 0; overflow: hidden; opacity: 0;
+    background: rgba(60, 40, 10, .78); color: #fff8e8; border-radius: 999px;
+    padding: 0 16px; font-size: 12px; line-height: 26px; white-space: nowrap;
+    text-overflow: ellipsis; pointer-events: none; transition: opacity .25s;
+    box-shadow: 0 3px 12px rgba(0,0,0,.25);
   }
-  #log .l-card { color: #b8860b; font-weight: bold; }
-  #log .l-bad { color: #c0392b; }
-  #log .l-good { color: #1e8449; }
-  #log .l-sys { color: #999; }
-  #log div { margin-bottom: 3px; border-bottom: 1px dashed #f0e3c8; padding-bottom: 3px; }
+  #log.show { height: 26px; opacity: 1; }
+  #log.l-card { background: rgba(150, 105, 0, .88); }
+  #log.l-bad { background: rgba(150, 40, 30, .9); }
+  #log.l-good { background: rgba(20, 110, 60, .9); }
+  #log.l-sys { background: rgba(70, 70, 70, .8); }
 
-  /* 掷骰按钮 */
+  /* 领地操作提示条 */
+  #tile-hint {
+    position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%);
+    background: rgba(255,247,225,.97); color: var(--brown); border: 2px solid var(--honey);
+    border-radius: 999px; padding: 6px 18px; font-size: 13px; font-weight: bold;
+    box-shadow: 0 4px 14px rgba(224,142,11,.35); display: none; white-space: nowrap;
+    max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 掷骰按钮：右下角（v0.6 不再挡中间棋盘） */
   #roll-btn {
-    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    position: absolute; right: 22px; bottom: 22px;
     background: linear-gradient(135deg, var(--honey), var(--honey-dark));
-    color: #fff; font-size: 20px; font-weight: bold; border: none;
-    padding: 13px 44px; border-radius: 999px; cursor: pointer;
+    color: #fff; font-size: 18px; font-weight: bold; border: none;
+    padding: 12px 32px; border-radius: 999px; cursor: pointer;
     box-shadow: 0 6px 16px rgba(224,142,11,.5);
     display: none;
   }
   #roll-btn:hover { filter: brightness(1.08); }
   #roll-btn:disabled { filter: grayscale(.6); cursor: not-allowed; }
   #dice-result {
-    position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
-    font-size: 30px; font-weight: bold; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.4);
+    position: absolute; right: 34px; bottom: 80px;
+    font-size: 26px; font-weight: bold; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.45);
     display: none;
   }
 
@@ -180,9 +191,11 @@
     #turn-banner { font-size: 13px; padding: 6px 14px; top: 8px; max-width: 52vw; white-space: normal; text-align: center; }
     #players { top: 46px; right: 8px; gap: 4px; }
     .chip { font-size: 11px; padding: 3px 9px; }
-    #log { width: 56vw; max-width: 280px; height: 110px; font-size: 11px; bottom: 10px; left: 10px; padding: 7px 9px; }
-    #roll-btn { font-size: 16px; padding: 10px 30px; bottom: 16px; }
-    #dice-result { bottom: 74px; font-size: 24px; }
+    #log { max-width: 84vw; font-size: 11px; line-height: 22px; bottom: 8px; padding: 0 12px; }
+    #log.show { height: 22px; }
+    #tile-hint { font-size: 11px; padding: 5px 12px; bottom: 40px; }
+    #roll-btn { font-size: 14px; padding: 9px 20px; right: 12px; bottom: 12px; }
+    #dice-result { right: 20px; bottom: 56px; font-size: 20px; }
     #modal { padding: 16px 16px; }
     #modal h3 { font-size: 16px; }
     #modal .m-body { font-size: 13px; }
@@ -194,10 +207,11 @@
   <div id="scene-container"></div>
 
   <div id="hud">
-    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.5 · 2D 横屏</small></div>
+    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.6 · 2D 横屏</small></div>
     <div id="turn-banner">…</div>
     <div id="players"></div>
     <div id="log"></div>
+    <div id="tile-hint"></div>
     <div id="dice-result"></div>
     <button id="roll-btn">🎲 掷骰子</button>
     <div id="modal-mask"><div id="modal"></div></div>
