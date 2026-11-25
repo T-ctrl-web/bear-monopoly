@@ -114,17 +114,21 @@
   #modal .card-face .c-rarity { font-size: 11px; border-radius: 6px; padding: 1px 8px; display: inline-block; margin-bottom: 8px; }
   #modal .card-face .c-desc { font-size: 13px; color: #6a5638; }
 
-  /* ------- 开局设置 ------- */
+  /* ------- 开局设置（横屏双栏） ------- */
   #setup {
     position: absolute; inset: 0; background: linear-gradient(160deg, #ffe9b8, #ffd077);
     display: flex; align-items: center; justify-content: center; z-index: 100;
   }
   #setup .box {
-    background: var(--cream); border-radius: 22px; padding: 30px 36px;
-    box-shadow: 0 15px 50px rgba(120, 70, 0, .3); text-align: center; max-width: 560px;
+    background: var(--cream); border-radius: 22px; padding: 28px 36px;
+    box-shadow: 0 15px 50px rgba(120, 70, 0, .3); text-align: center;
+    max-width: 900px; width: min(92vw, 900px);
+    display: grid; grid-template-columns: 1fr 1.15fr; gap: 8px 36px; align-items: start;
   }
+  #setup .left-col { display: flex; flex-direction: column; align-items: center; }
+  #setup .right-col { display: flex; flex-direction: column; align-items: center; }
   #setup h1 { color: var(--brown); font-size: 30px; margin-bottom: 4px; }
-  #setup .sub { color: #a08663; font-size: 13px; margin-bottom: 18px; }
+  #setup .sub { color: #a08663; font-size: 13px; margin-bottom: 6px; }
   #setup .sec-title { color: var(--brown); font-weight: bold; margin: 12px 0 8px; font-size: 15px; }
   #setup .count-btns button {
     border: 2px solid #e8d5ae; background: #fff; color: var(--brown);
@@ -142,11 +146,26 @@
   #setup .bear .b-name { font-weight: bold; color: var(--brown); font-size: 14px; }
   #setup .bear .b-trait { font-size: 10px; color: #a08663; margin-top: 3px; line-height: 1.4; }
   #setup #start-btn {
-    margin-top: 20px; border: none; background: linear-gradient(135deg, var(--honey), var(--honey-dark));
+    margin-top: 22px; border: none; background: linear-gradient(135deg, var(--honey), var(--honey-dark));
     color: #fff; font-size: 18px; font-weight: bold; padding: 12px 52px; border-radius: 999px;
     cursor: pointer; box-shadow: 0 6px 16px rgba(224,142,11,.5);
   }
-  #setup .tip { font-size: 11px; color: #b09a76; margin-top: 12px; }
+  #setup .tip { font-size: 11px; color: #b09a76; margin-top: 12px; grid-column: 1 / -1; }
+
+  /* 窄屏 / 竖屏时退回单列，并提示横屏 */
+  @media (max-width: 760px), (orientation: portrait) and (max-width: 900px) {
+    #setup .box { grid-template-columns: 1fr; padding: 22px; }
+    #setup .right-col .sec-title { margin-top: 4px; }
+  }
+  #rotate-tip { display: none; }
+  @media (orientation: portrait) and (max-width: 600px) {
+    #rotate-tip {
+      display: block; margin: 14px auto 0; max-width: 300px;
+      background: #fff3d6; border: 2px solid var(--honey); border-radius: 12px;
+      padding: 10px 14px; color: var(--brown); font-size: 13px; font-weight: bold;
+      grid-column: 1 / -1;
+    }
+  }
 </style>
 </head>
 <body>
@@ -164,22 +183,27 @@
 
   <div id="setup">
     <div class="box">
-      <h1>🍯 熊熊大富翁</h1>
-      <div class="sub">蜜熊岛年度大富翁大赛 · 淘汰制 · 最后留下的熊熊成为年度首富！</div>
-      <div class="sec-title">参赛熊熊数量（你是其中 1 位真人，其余为 AI 熊）</div>
-      <div class="count-btns">
-        <button data-n="3" class="on">3 位</button>
-        <button data-n="4">4 位</button>
+      <div class="left-col">
+        <h1>🍯 熊熊大富翁</h1>
+        <div class="sub">蜜熊岛年度大富翁大赛 · 淘汰制<br>最后留下的熊熊成为年度首富！</div>
+        <div class="sec-title">参赛熊熊数量（你是其中 1 位真人）</div>
+        <div class="count-btns">
+          <button data-n="3" class="on">3 位</button>
+          <button data-n="4">4 位</button>
+        </div>
+        <div class="sec-title">AI 难度</div>
+        <div class="count-btns diff-btns">
+          <button data-d="easy">😌 简单</button>
+          <button data-d="normal" class="on">🙂 普通</button>
+          <button data-d="hard">😤 困难</button>
+        </div>
+        <button id="start-btn">开始比赛！</button>
       </div>
-      <div class="sec-title">AI 难度</div>
-      <div class="count-btns diff-btns">
-        <button data-d="easy">😌 简单</button>
-        <button data-d="normal" class="on">🙂 普通</button>
-        <button data-d="hard">😤 困难</button>
+      <div class="right-col">
+        <div class="sec-title">选择你的熊熊角色</div>
+        <div class="bears" id="bear-pick"></div>
       </div>
-      <div class="sec-title">选择你的熊熊角色</div>
-      <div class="bears" id="bear-pick"></div>
-      <button id="start-btn">开始比赛！</button>
+      <div id="rotate-tip">📱 建议横屏游玩：转动手机体验更佳</div>
       <div class="tip">操作：鼠标拖动平移 · 滚轮缩放 · 踩到产业格会弹出购买/升级窗口 · 纯 2D 渲染，低配设备流畅运行</div>
     </div>
   </div>
