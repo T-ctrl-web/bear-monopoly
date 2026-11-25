@@ -729,19 +729,20 @@ async function movePlayer(p, steps, backward) {
 }
 
 /* ---------------- 落格结算 ----------------
- * v0.6：领地格不再自动弹窗。真人走到领地时只高亮提示「点击该格操作」，
- * 由玩家点格子再决定买/升级；AI 仍自动决策。非领地格（蜂巢/糖罐/起点）照旧自动结算。
+ * v0.6b：领地不自动弹窗。真人回合在此挂起，等玩家点击该格后再继续
+ * （修复：原实现不阻塞，AI 回合会清掉 pendingTile 导致点击无效）
  */
+let humanTileResolve = null;   // 挂起回合的恢复函数
+
 async function resolveTile(p) {
   if (!p.alive || !running) return;
   pendingTile = null;
   const t = tiles[p.pos];
   if (t.type === "land") {
     if (p.isHuman) {
-      if (t.owner && t.owner !== p) { await payRentByClick(p, t); return; }
-      pendingTile = t;
       showTilePrompt(t, p);
-      return;               // 不阻塞流程，玩家点击后再走 manualResolve
+      await new Promise(res => { humanTileResolve = res; pendingTile = t; });
+      return;
     }
     await resolveLand(p, t);
   } else if (t.type === "nest") await nestFlow(p);
@@ -751,11 +752,11 @@ async function resolveTile(p) {
 
 /* 领地高亮提示条 */
 function showTilePrompt(t, p) {
-  const act = !t.owner ? `点击买下（$ ${buyPrice(t, p)}）`
-    : t.owner === p ? (t.level >= CFG.MAX_LEVEL ? "已满级" : `点击升级（$ ${upgradeCost(t, p)}）`)
+  const act = !t.owner ? `点击格子买下（$ ${buyPrice(t, p)}）`
+    : t.owner === p ? (t.level >= CFG.MAX_LEVEL ? "已满级" : `点击格子升级（$ ${upgradeCost(t, p)}）`)
     : `业主 ${t.owner.name} · 过路费 ${computeRent(t)}`;
   const bar = $("tile-hint");
-  bar.innerHTML = `📍 <b>${t.name}</b> · ${act}${t.owner && t.owner !== p ? "" : " · 点击格子操作"}`;
+  bar.innerHTML = `📍 <b>${t.name}</b> · ${act}`;
   bar.style.display = "block";
   invalidate();
 }
@@ -764,24 +765,23 @@ function hideTilePrompt() {
   if (bar) bar.style.display = "none";
 }
 
-/* 玩家点击自己停留的领地格 -> 执行购买/升级/付过路费 */
+/* 玩家点击停驻领地格 -> 执行买/升级/付过路费，然后恢复回合 */
 async function manualResolve(t) {
+  if (!pendingTile || pendingTile !== t || !humanTileResolve) return;
   const p = players.find(x => x.isHuman && x.alive);
-  if (!p || !pendingTile || pendingTile !== t) return;
+  const res = humanTileResolve;
+  humanTileResolve = null;
   pendingTile = null;
   hideTilePrompt();
-  await resolveLand(p, t, true);
-}
-
-/* 真人踩到他人领地：先提示，点击格子后确认付过路费（v0.6） */
-async function payRentByClick(p, t) {
-  const rent = computeRent(t);
-  log(`⚠️ ${p.name} 踩到 ${t.owner.name} 的「${t.name}」，点击该格支付过路费 ${rent}`, "l-bad");
-  pendingTile = t;
-  const bar = $("tile-hint");
-  bar.innerHTML = `💰 踩到 <b>${t.owner.name}</b> 的「${t.name}」· 点击该格支付过路费 <b>$ ${rent}</b>`;
-  bar.style.display = "block";
-  invalidate();
+  if (!p) { res(); return; }
+  if (t.owner && t.owner !== p) {
+    const rent = computeRent(t);
+    log(`💰 ${p.name} 支付过路费 ${rent} 给 ${t.owner.name}`, "l-bad");
+    await charge(p, rent, t.owner, `${t.name} 过路费`);
+  } else {
+    await resolveLand(p, t, true);
+  }
+  res();
 }
 
 async function resolveLand(p, t, fromClick) {
