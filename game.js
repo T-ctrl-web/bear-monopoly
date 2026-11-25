@@ -1,6 +1,7 @@
 /* ============================================================
- * 《熊熊大富翁》可玩原型 v0.1
+ * 《熊熊大富翁》可玩原型 v0.2（2.5D 版）
  * 规则来源：《核心玩法设计.md》GDD v0.5 + 经济调参表 v1
+ * 渲染：v0.2 起改为 2.5D 等轴 Canvas 2D（不依赖 WebGL，规则与数值与 v0.1 完全一致）
  * ============================================================ */
 "use strict";
 
@@ -131,228 +132,300 @@ function showModal({ title, body, buttons, cardFace }) {
   });
 }
 
-/* ---------------- Three.js 场景 ---------------- */
-let scene, camera, renderer, raycaster;
-const TILE_Y = 0.16;
-const tileMeshes = [];        // 每格基座 mesh（含 userData.pos）
-const ownerFrames = {};       // pos -> owner 边框 line
-const buildingMeshes = {};    // pos -> 建筑 group
-const bearGroups = {};        // playerId -> group
+/* ============================================================
+ * 2.5D 等轴 Canvas 场景（替代原 Three.js 3D，规则不变）
+ * ============================================================ */
+const ISO_HW = 46, ISO_HH = 23;          // 菱形半宽/半高（1 格）
+const css = n => "#" + n.toString(16).padStart(6, "0");
+let canvas, ctx, DPR = 1;
+let viewScale = 1, viewOX = 0, viewOY = 0, fitScale = 1;
+let dirty = true;                        // 脏标记：仅在需要时重绘
+const bears = {};                        // playerId -> {sx, sy}（屏幕像素坐标）
+let decoTrees = [];                      // 中央装饰（初始化时固定随机位置）
 
-// 32 格 -> 10x8 方环坐标
-function tileCoord(pos) {
-  let x, z;
-  if (pos <= 9)        { x = -4.5 + pos;        z = -3.5; }
-  else if (pos <= 15)  { x = 4.5;               z = -2.5 + (pos - 10); }
-  else if (pos <= 25)  { x = 4.5 - (pos - 16);  z = 3.5; }
-  else                 { x = -4.5;              z = 3.5 - (pos - 26); }
-  return new THREE.Vector3(x, TILE_Y, z);
+// 32 格 -> 10x8 方环网格坐标（与 v0.1 完全一致）
+function tileGrid(pos) {
+  if (pos <= 9)        return { x: -4.5 + pos,       z: -3.5 };
+  if (pos <= 15)       return { x: 4.5,              z: -2.5 + (pos - 10) };
+  if (pos <= 25)       return { x: 4.5 - (pos - 16), z: 3.5 };
+  return { x: -4.5, z: 3.5 - (pos - 26) };
 }
+// 网格 -> 等轴屏幕坐标
+function isoPt(x, z) { return { sx: (x - z) * ISO_HW, sy: (x + z) * ISO_HH }; }
 
 function initScene() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xaee3f5);
-  scene.fog = new THREE.Fog(0xaee3f5, 22, 40);
+  canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none";
+  $("scene-container").appendChild(canvas);
+  ctx = canvas.getContext("2d");
 
-  camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 100);
-  camera.position.set(11, 12, 11);
-  camera.lookAt(0, 0, 0);
-
-  renderer = null;
-  try {
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    $("scene-container").appendChild(renderer.domElement);
-  } catch (e) {
-    const tip = document.createElement("div");
-    tip.style.cssText = "position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);background:#fff6e3;padding:20px 30px;border-radius:14px;color:#6b4a2b;font-size:15px;text-align:center;line-height:1.8;box-shadow:0 8px 30px rgba(0,0,0,.25)";
-    tip.innerHTML = "⚠️ 当前环境不支持 WebGL（3D 棋盘无法显示）<br>请换用 Chrome / Edge / Safari 等现代浏览器打开";
-    $("scene-container").appendChild(tip);
-    return;
+  // 固定的中央装饰树位置（固定种子式的伪随机，保证每次重绘一致）
+  decoTrees = [];
+  let seed = 20261125;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 10; i++) {
+    const tx = (rnd() - 0.5) * 7.4, tz = (rnd() - 0.5) * 4.6;
+    if (Math.abs(tx) < 1.8 && Math.abs(tz) < 1.6) continue;
+    decoTrees.push({ x: tx, z: tz, dark: i % 2 === 0 });
   }
 
-  // 灯光
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const sun = new THREE.DirectionalLight(0xfff2d0, 0.95);
-  sun.position.set(8, 14, 6);
-  scene.add(sun);
-
-  // 中央草地
-  const grass = new THREE.Mesh(
-    new THREE.BoxGeometry(8.6, 0.12, 5.6),
-    new THREE.MeshLambertMaterial({ color: 0xa8d878 })
-  );
-  grass.position.y = 0.06;
-  scene.add(grass);
-
-  // 中央装饰：蜜金树
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.1, 7), new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
-  trunk.position.y = 0.7; scene.add(trunk);
-  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.85, 8, 6), new THREE.MeshLambertMaterial({ color: 0xf7b733 }));
-  crown.position.y = 1.6; scene.add(crown);
-  // 小树点缀
-  for (let i = 0; i < 8; i++) {
-    const tx = (Math.random() - 0.5) * 7.4, tz = (Math.random() - 0.5) * 4.6;
-    if (Math.abs(tx) < 1.5 && Math.abs(tz) < 1.5) continue;
-    const t = new THREE.Group();
-    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.34, 6), new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
-    tr.position.y = 0.17;
-    const cr = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.5, 7), new THREE.MeshLambertMaterial({ color: i % 2 ? 0x7cb85c : 0x5da24a }));
-    cr.position.y = 0.55;
-    t.add(tr, cr); t.position.set(tx, 0.12, tz);
-    scene.add(t);
-  }
-
-  // 棋盘格
-  tiles.forEach(tile => {
-    let color, w = 0.92;
-    if (tile.type === "land") color = REGION_COLOR[tile.region];
-    else if (tile.type === "start") { color = 0xf7b733; w = 1.0; }
-    else if (tile.type === "nest") color = 0xffe066;
-    else if (tile.type === "jar") color = 0xf39fb6;
-    else color = 0xe8e2d4;
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, 0.16, w),
-      new THREE.MeshLambertMaterial({ color })
-    );
-    const c = tileCoord(tile.pos);
-    mesh.position.set(c.x, 0.08, c.z);
-    mesh.userData.pos = tile.pos;
-    scene.add(mesh);
-    tileMeshes.push(mesh);
-
-    // 特殊格小标志
-    if (tile.type === "start") {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.5, 6), new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
-      p.position.set(c.x, 0.4, c.z); scene.add(p);
-      const g = new THREE.Mesh(new THREE.SphereGeometry(0.22, 7, 6), new THREE.MeshLambertMaterial({ color: 0xffd75e }));
-      g.position.set(c.x, 0.75, c.z); scene.add(g);
-    } else if (tile.type === "nest") {
-      const h = new THREE.Mesh(new THREE.SphereGeometry(0.2, 7, 6), new THREE.MeshLambertMaterial({ color: 0xe08e0b }));
-      h.position.set(c.x, 0.32, c.z); scene.add(h);
-    } else if (tile.type === "jar") {
-      const j = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.3, 8), new THREE.MeshLambertMaterial({ color: 0xf78fb3 }));
-      j.position.set(c.x, 0.3, c.z); scene.add(j);
-    }
-  });
-
-  // 简易视角控制：拖动旋转 + 滚轮缩放
-  let dragging = false, lastX = 0, lastY = 0, azimuth = Math.PI / 4, polar = 0.95, radius = 18;
-  const updateCam = () => {
-    camera.position.set(
-      radius * Math.sin(polar) * Math.cos(azimuth),
-      radius * Math.cos(polar),
-      radius * Math.sin(polar) * Math.sin(azimuth)
-    );
-    camera.lookAt(0, 0, 0);
+  const resize = () => {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const w = innerWidth, h = innerHeight;
+    canvas.width = Math.round(w * DPR);
+    canvas.height = Math.round(h * DPR);
+    // 棋盘等轴范围：sx ±(8*ISO_HW+边距), sy ±(8*ISO_HH+建筑高度)
+    fitScale = Math.min(w / 860, h / 560);
+    dirty = true;
   };
-  updateCam();
-  renderer.domElement.addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  addEventListener("resize", resize);
+  resize();
+
+  // 视角控制：拖动平移 + 滚轮缩放（2D，开销极低）
+  let dragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
   addEventListener("pointerup", () => dragging = false);
   addEventListener("pointermove", e => {
     if (!dragging) return;
-    azimuth += (e.clientX - lastX) * 0.008;
-    polar = Math.min(1.35, Math.max(0.45, polar - (e.clientY - lastY) * 0.006));
+    viewOX += (e.clientX - lastX) / viewScale;
+    viewOY += (e.clientY - lastY) / viewScale;
     lastX = e.clientX; lastY = e.clientY;
-    updateCam();
+    dirty = true;
   });
-  renderer.domElement.addEventListener("wheel", e => {
-    radius = Math.min(30, Math.max(9, radius + e.deltaY * 0.02));
-    updateCam();
-  }, { passive: true });
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const k = e.deltaY > 0 ? 0.92 : 1.09;
+    const ns = Math.min(2.2, Math.max(0.6, viewScale * k));
+    if (ns !== viewScale) { viewScale = ns; dirty = true; }
+  }, { passive: false });
 
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
-
-  (function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); })();
+  (function loop() {
+    requestAnimationFrame(loop);
+    if (dirty) { dirty = false; render(); }
+  })();
 }
 
-/* ---------------- 低模熊熊 ---------------- */
-function makeBear(color) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color });
-  const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.55) });
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), mat);
-  body.scale.set(1, 1.15, 0.85); body.position.y = 0.24;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), mat);
-  head.position.y = 0.52;
-  const earGeo = new THREE.SphereGeometry(0.07, 7, 6);
-  const e1 = new THREE.Mesh(earGeo, dark); e1.position.set(-0.12, 0.66, 0);
-  const e2 = new THREE.Mesh(earGeo, dark); e2.position.set(0.12, 0.66, 0);
-  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.075, 7, 6), new THREE.MeshLambertMaterial({ color: 0xfff1dc }));
-  muzzle.position.set(0, 0.48, 0.14);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), dark);
-  nose.position.set(0, 0.5, 0.2);
-  g.add(body, head, e1, e2, muzzle, nose);
-  return g;
+function invalidate() { dirty = true; }
+
+/* ---------------- 绘制基元 ---------------- */
+function diamond(cx, cy, hw, hh) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - hh); ctx.lineTo(cx + hw, cy); ctx.lineTo(cx, cy + hh); ctx.lineTo(cx - hw, cy);
+  ctx.closePath();
 }
+
+// 伪 3D 方块：底面菱形中心 (cx,cy)，高 h，尺寸 s（占格比例）
+function drawBox(cx, cy, s, h, topColor, leftColor, rightColor) {
+  const hw = ISO_HW * s, hh = ISO_HH * s;
+  // 左面
+  ctx.fillStyle = leftColor;
+  ctx.beginPath();
+  ctx.moveTo(cx - hw, cy); ctx.lineTo(cx, cy + hh); ctx.lineTo(cx, cy + hh - h); ctx.lineTo(cx - hw, cy - h);
+  ctx.closePath(); ctx.fill();
+  // 右面
+  ctx.fillStyle = rightColor;
+  ctx.beginPath();
+  ctx.moveTo(cx + hw, cy); ctx.lineTo(cx, cy + hh); ctx.lineTo(cx, cy + hh - h); ctx.lineTo(cx + hw, cy - h);
+  ctx.closePath(); ctx.fill();
+  // 顶面
+  ctx.fillStyle = topColor;
+  diamond(cx, cy - h, hw, hh); ctx.fill();
+}
+
+function shade(hexColor, f) {  // f<1 变暗，f>1 提亮
+  const r = Math.min(255, Math.round(((hexColor >> 16) & 255) * f));
+  const g = Math.min(255, Math.round(((hexColor >> 8) & 255) * f));
+  const b = Math.min(255, Math.round((hexColor & 255) * f));
+  return css((r << 16) | (g << 8) | b);
+}
+
+/* ---------------- 主渲染 ---------------- */
+function render() {
+  const W = canvas.width, H = canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // 天空渐变
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#aee3f5"); sky.addColorStop(1, "#c9ecf7");
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  ctx.setTransform(DPR * viewScale * fitScale, 0, 0, DPR * viewScale * fitScale,
+    DPR * (W / DPR / 2 + viewOX * viewScale * fitScale), DPR * (H / DPR / 2 + 40 + viewOY * viewScale * fitScale));
+
+  // 中央草地（大菱形）
+  ctx.fillStyle = "#a8d878";
+  ctx.strokeStyle = "#8fc763"; ctx.lineWidth = 2;
+  diamond(0, 0, ISO_HW * 8.6, ISO_HH * 5.6); ctx.fill(); ctx.stroke();
+
+  // 装饰小树（画在草地上，按深度无所谓，都在中央）
+  decoTrees.forEach(t => {
+    const p = isoPt(t.x, t.z);
+    ctx.fillStyle = "#8a5a2b";
+    ctx.fillRect(p.sx - 2.5, p.sy - 14, 5, 14);
+    ctx.fillStyle = t.dark ? "#5da24a" : "#7cb85c";
+    ctx.beginPath(); ctx.moveTo(p.sx, p.sy - 34); ctx.lineTo(p.sx + 11, p.sy - 12); ctx.lineTo(p.sx - 11, p.sy - 12);
+    ctx.closePath(); ctx.fill();
+  });
+
+  // 中央蜜金树
+  const treeP = isoPt(0, 0);
+  ctx.fillStyle = "#8a5a2b";
+  ctx.fillRect(treeP.sx - 7, treeP.sy - 46, 14, 46);
+  ctx.fillStyle = "#c98f3d";
+  ctx.fillRect(treeP.sx - 7, treeP.sy - 46, 6, 46);
+  ctx.fillStyle = "#f7b733";
+  ctx.beginPath(); ctx.arc(treeP.sx, treeP.sy - 62, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffd75e";
+  ctx.beginPath(); ctx.arc(treeP.sx - 8, treeP.sy - 68, 10, 0, Math.PI * 2); ctx.fill();
+
+  // 棋盘格（先画全部地面，按深度排序）
+  const sorted = [...tiles].map(t => ({ t, g: tileGrid(t.pos) })).sort((a, b) => (a.g.x + a.g.z) - (b.g.x + b.g.z));
+
+  // 第一遍：地面菱形
+  sorted.forEach(({ t, g }) => {
+    const p = isoPt(g.x, g.z);
+    let fill;
+    if (t.type === "land") fill = css(REGION_COLOR[t.region]);
+    else if (t.type === "start") fill = "#f7b733";
+    else if (t.type === "nest") fill = "#ffe066";
+    else if (t.type === "jar") fill = "#f39fb6";
+    else fill = "#e8e2d4";
+    diamond(p.sx, p.sy, ISO_HW * 0.94, ISO_HH * 0.94);
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.strokeStyle = "rgba(90,60,20,.18)"; ctx.lineWidth = 1.2; ctx.stroke();
+
+    // 业主色边框
+    if (t.type === "land" && t.owner) {
+      diamond(p.sx, p.sy, ISO_HW * 0.99, ISO_HH * 0.99);
+      ctx.strokeStyle = css(t.owner.color); ctx.lineWidth = 4; ctx.stroke();
+    }
+  });
+
+  // 第二遍：特殊格标志 + 建筑 + 熊熊（按深度统一排序绘制）
+  const actors = [];
+  sorted.forEach(({ t, g }) => actors.push({ depth: g.x + g.z, draw: () => drawTileProp(t, g) }));
+  players.filter(p => p.alive).forEach(p => actors.push({
+    depth: bearDepth(p), draw: () => drawBear(p)
+  }));
+  actors.sort((a, b) => a.depth - b.depth).forEach(a => a.draw());
+}
+
+function bearDepth(p) {
+  // 与 bearSlot 的网格偏移一致
+  const g = tileGrid(p.pos);
+  const offs = [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]];
+  const o = offs[p.idx % 4];
+  return g.x + o[0] + g.z + o[1];
+}
+
+function drawTileProp(t, g) {
+  const p = isoPt(g.x, g.z);
+  if (t.type === "start") {
+    // 蜜金树小标志已在中央画过，这里画起点旗
+    ctx.fillStyle = "#8a5a2b";
+    ctx.fillRect(p.sx - 2, p.sy - 30, 4, 30);
+    ctx.fillStyle = "#e08e0b";
+    ctx.beginPath(); ctx.moveTo(p.sx + 2, p.sy - 30); ctx.lineTo(p.sx + 22, p.sy - 23); ctx.lineTo(p.sx + 2, p.sy - 16);
+    ctx.closePath(); ctx.fill();
+    ctx.font = "13px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("GO", p.sx, p.sy + 5);
+  } else if (t.type === "nest") {
+    ctx.font = "17px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("🐝", p.sx, p.sy - 8);
+  } else if (t.type === "jar") {
+    ctx.font = "17px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("🍯", p.sx, p.sy - 8);
+  } else if (t.type === "land" && t.owner) {
+    // 建筑：Lv1 小摊 / Lv2 小店+屋顶 / Lv3 大楼+金顶
+    const oc = t.owner.color;
+    const heights = { 1: 16, 2: 30, 3: 46 };
+    const h = heights[t.level];
+    const bp = isoPt(g.x + 0.22, g.z - 0.22);
+    drawBox(bp.sx, bp.sy, 0.34, h, shade(oc, 1.25), shade(oc, 0.55), shade(oc, 0.8));
+    if (t.level >= 2) {
+      // 红瓦尖顶
+      ctx.fillStyle = "#e07a5f";
+      ctx.beginPath();
+      ctx.moveTo(bp.sx, bp.sy - h - 14);
+      ctx.lineTo(bp.sx + ISO_HW * 0.34, bp.sy - h);
+      ctx.lineTo(bp.sx, bp.sy - h + ISO_HH * 0.34);
+      ctx.lineTo(bp.sx - ISO_HW * 0.34, bp.sy - h);
+      ctx.closePath(); ctx.fill();
+    }
+    if (t.level >= 3) {
+      ctx.fillStyle = "#f7b733";
+      ctx.beginPath(); ctx.arc(bp.sx, bp.sy - h - 19, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    // 地价名牌（Lv1 也显示名字缩写）
+    ctx.font = "9px sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(90,60,20,.75)";
+    const nm = t.name.length > 4 ? t.name.slice(0, 4) : t.name;
+    ctx.fillText(nm, p.sx, p.sy + ISO_HH * 0.62);
+  }
+}
+
+/* ---------------- 2.5D 熊熊 ---------------- */
+function makeBear() { /* 渲染层无预置对象，保留空实现以兼容调用 */ }
 
 function bearSlot(pos, playerIdx) {
-  const c = tileCoord(pos);
+  const g = tileGrid(pos);
   const offs = [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]];
   const o = offs[playerIdx % 4];
-  return new THREE.Vector3(c.x + o[0], TILE_Y, c.z + o[1]);
+  return isoPt(g.x + o[0], g.z + o[1]);
+}
+
+function drawBear(p) {
+  const b = bears[p.id];
+  if (!b) return;
+  const x = b.sx, y = b.sy;
+  const col = css(p.color), dark = shade(p.color, 0.55);
+  // 影子
+  ctx.fillStyle = "rgba(60,40,10,.25)";
+  ctx.beginPath(); ctx.ellipse(x, y + 3, 13, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // 身体
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.ellipse(x, y - 10, 11, 13, 0, 0, Math.PI * 2); ctx.fill();
+  // 耳朵
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.arc(x - 8, y - 24, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 8, y - 24, 4.5, 0, Math.PI * 2); ctx.fill();
+  // 头
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x, y - 20, 10, 0, Math.PI * 2); ctx.fill();
+  // 口鼻
+  ctx.fillStyle = "#fff1dc";
+  ctx.beginPath(); ctx.ellipse(x, y - 17, 5.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.arc(x, y - 18.5, 2, 0, Math.PI * 2); ctx.fill();
+  // 名字牌
+  ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,252,240,.9)";
+  ctx.beginPath();
+  const tw = ctx.measureText(p.name).width + 10;
+  ctx.roundRect ? (ctx.beginPath(), ctx.roundRect(x - tw / 2, y - 46, tw, 14, 7), ctx.fill()) : ctx.fillRect(x - tw / 2, y - 46, tw, 14);
+  ctx.fillStyle = "#6b4a2b";
+  ctx.fillText(p.name, x, y - 35);
 }
 
 async function hopBear(p, targetPos) {
-  const g = bearGroups[p.id];
-  const from = g.position.clone();
+  const from = bears[p.id] ? { ...bears[p.id] } : bearSlot(p.pos, p.idx);
   const to = bearSlot(targetPos, p.idx);
-  const t0 = performance.now(), dur = 220;
+  const t0 = performance.now(), dur = 200;
   return new Promise(res => {
     (function step() {
       const k = Math.min(1, (performance.now() - t0) / dur);
-      g.position.lerpVectors(from, to, k);
-      g.position.y = TILE_Y + Math.sin(k * Math.PI) * 0.28;
+      const e = k * k * (3 - 2 * k); // smoothstep
+      bears[p.id] = {
+        sx: from.sx + (to.sx - from.sx) * e,
+        sy: from.sy + (to.sy - from.sy) * e - Math.sin(k * Math.PI) * 22,
+      };
+      dirty = true;
       if (k < 1) requestAnimationFrame(step); else res();
     })();
   });
 }
 
-/* ---------------- 地产 3D 状态 ---------------- */
-function updateTileVisual(tile) {
-  const c = tileCoord(tile.pos);
-  if (ownerFrames[tile.pos]) { scene.remove(ownerFrames[tile.pos]); ownerFrames[tile.pos] = null; }
-  if (buildingMeshes[tile.pos]) { scene.remove(buildingMeshes[tile.pos]); buildingMeshes[tile.pos] = null; }
-  if (tile.type !== "land") return;
-  if (tile.owner) {
-    const oc = new THREE.Color(tile.owner.color);
-    const frame = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(0.98, 0.06, 0.98)),
-      new THREE.LineBasicMaterial({ color: oc })
-    );
-    frame.position.set(c.x, TILE_Y + 0.02, c.z);
-    scene.add(frame);
-    ownerFrames[tile.pos] = frame;
-  }
-  // 等级建筑：小摊/小店/大楼
-  if (tile.owner && tile.level >= 1) {
-    const b = new THREE.Group();
-    const oc = new THREE.Color(tile.owner.color).lerp(new THREE.Color(0xffffff), 0.25);
-    const heights = { 1: 0.22, 2: 0.42, 3: 0.72 };
-    const h = heights[tile.level];
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, h, 0.34), new THREE.MeshLambertMaterial({ color: oc }));
-    box.position.y = h / 2;
-    b.add(box);
-    if (tile.level >= 2) {
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.2, 4), new THREE.MeshLambertMaterial({ color: 0xe07a5f }));
-      roof.position.y = h + 0.1; roof.rotation.y = Math.PI / 4;
-      b.add(roof);
-    }
-    if (tile.level >= 3) {
-      const top = new THREE.Mesh(new THREE.SphereGeometry(0.1, 7, 6), new THREE.MeshLambertMaterial({ color: 0xf7b733 }));
-      top.position.y = h + 0.28;
-      b.add(top);
-    }
-    b.position.set(c.x + 0.22, TILE_Y, c.z - 0.22);
-    scene.add(b);
-    buildingMeshes[tile.pos] = b;
-  }
-}
+/* ---------------- 地产视觉刷新（2.5D：状态即画面，标记重绘即可） ---------------- */
+function updateTileVisual(tile) { invalidate(); }
 
 /* ---------------- 玩家 ---------------- */
 function makePlayer(char, idx, isHuman) {
@@ -361,10 +434,8 @@ function makePlayer(char, idx, isHuman) {
     cash: CFG.START_CASH, debt: 0, laps: 0, hasLoaned: false,
     pos: 0, alive: true, skipTurns: 0, holdEscape: false, holdPromo: false, props: [],
   };
-  const g = makeBear(char.color);
-  g.position.copy(bearSlot(0, idx));
-  scene.add(g);
-  bearGroups[p.id] = g;
+  bears[p.id] = bearSlot(0, idx);
+  invalidate();
   return p;
 }
 
@@ -437,8 +508,8 @@ async function eliminate(p, creditor, reason) {
     updateTileVisual(t);
   });
   p.props = [];
-  scene.remove(bearGroups[p.id]);
-  delete bearGroups[p.id];
+  delete bears[p.id];
+  invalidate();
   log(`🍞 ${p.name} 破产出局（${reason}），去面包房打工啦——明年再见！` + (creditor ? `产业全部移交给 ${creditor.name}。` : ""), "l-bad");
   updateUI();
   await sleep(1200);
@@ -740,6 +811,7 @@ function updateUI() {
       <div class="p-props">产业 ${p.props.length} 块${badges ? " · " + badges : ""}</div>`;
     playersEl.appendChild(c);
   });
+  invalidate();
   if (running) {
     const cur = players[turnIdx];
     if (cur && cur.isHuman && rollBtn.style.display === "none") turnBanner.textContent = `🍯 轮到你了：${cur.name} · 掷骰子吧！`;
@@ -797,3 +869,11 @@ rollBtn.onclick = async () => {
 };
 
 setupUI();
+
+/* 调试/测试句柄（tools/logic-smoke-test.js 通过它读取脚本作用域状态） */
+globalThis.__G = {
+  get players() { return players; },
+  get tiles() { return tiles; },
+  get running() { return running; },
+  get turnIdx() { return turnIdx; },
+};
