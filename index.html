@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>熊熊大富翁 · 可玩原型 v0.1</title>
+<title>熊熊大富翁 · 可玩原型 v0.3（2D 横屏）</title>
 <style>
   :root {
     --honey: #f7b733;
@@ -13,7 +13,7 @@
     --panel: rgba(255, 250, 238, 0.94);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #87ceeb; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #a8d878; }
   #scene-container { position: absolute; inset: 0; }
 
   /* ------- HUD ------- */
@@ -153,7 +153,7 @@
   <div id="scene-container"></div>
 
   <div id="hud">
-    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.1</small></div>
+    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.3 · 2D 横屏</small></div>
     <div id="turn-banner">…</div>
     <div id="players"></div>
     <div id="log"></div>
@@ -174,11 +174,10 @@
       <div class="sec-title">选择你的熊熊角色</div>
       <div class="bears" id="bear-pick"></div>
       <button id="start-btn">开始比赛！</button>
-      <div class="tip">操作：鼠标拖动旋转视角 · 滚轮缩放 · 踩到产业格会弹出购买/升级窗口</div>
+      <div class="tip">操作：鼠标拖动平移 · 滚轮缩放 · 踩到产业格会弹出购买/升级窗口 · 纯 2D 渲染，低配设备流畅运行</div>
     </div>
   </div>
 
-  <script src="lib/three.min.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
