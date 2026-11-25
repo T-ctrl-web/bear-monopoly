@@ -152,17 +152,26 @@
   }
   #setup .tip { font-size: 11px; color: #b09a76; margin-top: 12px; grid-column: 1 / -1; }
 
-  /* 窄屏 / 竖屏时退回单列，并提示横屏 */
-  @media (max-width: 760px), (orientation: portrait) and (max-width: 900px) {
-    #setup .box { grid-template-columns: 1fr; padding: 22px; }
-    #setup .right-col .sec-title { margin-top: 4px; }
+  /* 窄屏 / 手机竖屏：保持双栏横排，整体紧凑缩放（不再退回单列） */
+  @media (max-width: 760px), (orientation: portrait) {
+    #setup .box { padding: 14px 16px; gap: 4px 14px; border-radius: 16px; }
+    #setup h1 { font-size: 20px; }
+    #setup .sub { font-size: 11px; }
+    #setup .sec-title { font-size: 12px; margin: 8px 0 6px; }
+    #setup .count-btns button { padding: 5px 12px; margin: 0 3px; font-size: 12px; }
+    #setup .bear { width: 72px; padding: 7px 4px; border-radius: 10px; }
+    #setup .bear .swatch { width: 26px; height: 26px; border-width: 2px; }
+    #setup .bear .b-name { font-size: 12px; }
+    #setup .bear .b-trait { font-size: 9px; }
+    #setup #start-btn { font-size: 15px; padding: 9px 34px; margin-top: 12px; }
+    #setup .tip { font-size: 10px; }
   }
   #rotate-tip { display: none; }
   @media (orientation: portrait) and (max-width: 600px) {
     #rotate-tip {
-      display: block; margin: 14px auto 0; max-width: 300px;
+      display: block; margin: 10px auto 0; max-width: 300px;
       background: #fff3d6; border: 2px solid var(--honey); border-radius: 12px;
-      padding: 10px 14px; color: var(--brown); font-size: 13px; font-weight: bold;
+      padding: 8px 12px; color: var(--brown); font-size: 12px; font-weight: bold;
       grid-column: 1 / -1;
     }
   }
