@@ -12,7 +12,7 @@ const CFG = {
   START_SUBSIDY_RATE: 0.10,// 过起点补贴比例
   BASE_PRICE: 300,         // 基准地价
   DIST_DECAY: 0.01,        // 距起点每格折减
-  RENT_MULT: { 1: 1.0, 2: 2.5, 3: 5.0 },  // 过路费倍率
+  RENT_MULT: { 1: 0.8, 2: 1.6, 3: 3.0 },  // 过路费倍率（v0.7 调低：旧 1.0/2.5/5.0 升满+垄断过于致命）
   MONOPOLY_MULT: 2.0,      // 垄断倍数
   UPG_RATE: { 2: 0.50, 3: 1.00 },         // 升级费率
   SELL_RATE: 0.50,         // 破产变卖折价
@@ -268,11 +268,16 @@ function showTileInfo(t) {
   const human = players.find(x => x.isHuman && x.alive);
   let body = "";
   if (t.type === "land") {
-    body = `${t.region} · 地价 ${t.price} 熊熊币\n` +
-      (t.owner
-        ? `业主：${t.owner.name}  Lv${t.level}\n当前过路费 ${computeRent(t)}${monopolyOwner(t.region, t.owner) ? "（垄断×2）" : ""}\n` +
-          (t.owner === human ? `升级费 ${t.level >= CFG.MAX_LEVEL ? "已满级" : upgradeCost(t, human)}` : "")
-        : "无主，走到这里可购买");
+    const mono = monopolyOwner(t.region, t.owner) ? "（当前垄断 ×2）" : "（集齐同区垄断后 ×2）";
+    const upg = lv => lv <= CFG.MAX_LEVEL ? Math.round(t.price * CFG.UPG_RATE[lv]) : null;
+    body = `${t.region} · 地价 ${t.price} 熊熊币 · 业主：${t.owner ? t.owner.name : "无主"}\n\n` +
+      `各等级过路费 ${mono}：\n` +
+      `  Lv1（小摊）：$${Math.round(t.price * CFG.RENT_MULT[1])}\n` +
+      `  Lv2（小店）：升级费 $${upg(2)} → 过路费 $${Math.round(t.price * CFG.RENT_MULT[2])}\n` +
+      `  Lv3（大楼）：升级费 $${upg(3)} → 过路费 $${Math.round(t.price * CFG.RENT_MULT[3])}\n` +
+      (t.owner === human && t.level < CFG.MAX_LEVEL
+        ? `\n你下一次升级：$${upgradeCost(t, human)}${p_hasPromo(human) ? "（大促销减半）" : ""}`
+        : "");
   } else if (t.type === "nest") {
     body = "抽一张命运/机会卡";
   } else if (t.type === "jar") {
@@ -284,6 +289,7 @@ function showTileInfo(t) {
   }
   showModal({ title: `📍 ${t.name}`, body, buttons: [{ label: "关闭", value: true, secondary: true }] });
 }
+function p_hasPromo(p) { return p && p.holdPromo; }
 
 function invalidate() { dirty = true; }
 
