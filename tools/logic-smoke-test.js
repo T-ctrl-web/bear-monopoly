@@ -82,6 +82,10 @@ const timer = setInterval(() => {
     btn.style.display = "none";
     btn.onclick();
   }
+  // v0.6：领地不再自动弹窗，测试里替玩家点击停驻的领地格
+  if (typeof global.manualResolve === "function" && state().pendingTile) {
+    global.manualResolve(state().pendingTile);
+  }
 }, 30);
 
 /* ---------- 上限保护 ---------- */
