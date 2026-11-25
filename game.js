@@ -93,6 +93,7 @@ let players = [];
 let turnIdx = 0;
 let running = false;
 let totalPlayers = 3;
+let aiDifficulty = "normal";   // easy / normal / hard
 let humanChar = CHARS[0];
 
 /* ---------------- DOM 引用 ---------------- */
@@ -435,6 +436,53 @@ function buyPrice(tile, p) {
   return price;
 }
 
+/* ---------------- AI 难度（v0.4 新增；不改规则，只改 AI 决策风格） ---------------- */
+const DIFF_NAME = { easy: "简单", normal: "普通", hard: "困难" };
+
+// 综合身价最高者 = 领先者（现金 + 产业总地价）
+function leaderPlayer() {
+  let best = null, bestVal = -1;
+  players.filter(p => p.alive).forEach(p => {
+    const v = p.cash + p.props.reduce((s, t) => s + t.price, 0);
+    if (v > bestVal) { bestVal = v; best = p; }
+  });
+  return best;
+}
+function regionOwnCount(region, owner) {
+  return tiles.filter(t => t.type === "land" && t.region === region && t.owner === owner).length;
+}
+function regionTotal(region) {
+  return tiles.filter(t => t.type === "land" && t.region === region).length;
+}
+
+function aiWantsBuy(p, tile, price) {
+  if (p.cash < price) return false;
+  if (aiDifficulty === "easy") return p.cash - price >= 500 && Math.random() < 0.7;
+  if (aiDifficulty === "hard") {
+    const lead = leaderPlayer();
+    const mine = regionOwnCount(tile.region, p);
+    // 冲自家垄断：已有同区产业就优先拿下（可压低保留现金）
+    if (mine >= 1) return p.cash - price >= 100;
+    // 卡位：领先者在该区已有 ≥2 块，买下阻断其垄断
+    if (lead && lead !== p && regionOwnCount(tile.region, lead) >= 2) return p.cash - price >= 150;
+    return p.cash - price >= CFG.AI_RESERVE;
+  }
+  return p.cash - price >= CFG.AI_RESERVE; // 普通
+}
+
+function aiWantsUpgrade(p, tile, cost) {
+  if (p.cash < cost) return false;
+  if (aiDifficulty === "easy") return p.cash - cost >= 600 && Math.random() < 0.6;
+  if (aiDifficulty === "hard") {
+    const mine = regionOwnCount(tile.region, p);
+    // 已垄断的区域优先升级（垄断×2 收益最大化）
+    if (mine === regionTotal(tile.region)) return p.cash - cost >= 100;
+    if (mine >= 2) return p.cash - cost >= 200;
+    return p.cash - cost >= CFG.AI_RESERVE + 100;
+  }
+  return p.cash - cost >= CFG.AI_RESERVE + 100; // 普通
+}
+
 /* 向 payer 收 amount；payee 为 null 表示交给银行。返回 payer 是否存活 */
 async function charge(payer, amount, payee, reason) {
   if (amount <= 0) return true;
@@ -598,7 +646,7 @@ async function resolveLand(p, t) {
         buttons: [{ label: `买下（-${price}）`, value: true }, { label: "放弃", value: false, secondary: true }],
       });
     } else {
-      bought = p.cash - price >= CFG.AI_RESERVE;
+      bought = aiWantsBuy(p, t, price);
     }
     if (bought && p.cash >= price) {
       p.cash -= price;
@@ -626,7 +674,7 @@ async function resolveLand(p, t) {
         buttons: [{ label: `升级到 Lv${nextLv}`, value: true }, { label: "下次再说", value: false, secondary: true }],
       });
     } else {
-      up = p.cash - cost >= CFG.AI_RESERVE + 100;
+      up = aiWantsUpgrade(p, t, cost);
     }
     if (up && p.cash >= cost) {
       p.cash -= cost;
@@ -713,7 +761,15 @@ async function applyCard(p, card) {
       if (p.props.length === 0 || others.length === 0) { log(`😅 没有可交换的产业，搬家券作废`, "l-sys"); break; }
       p.props.sort((a, b) => a.price - b.price);
       const mine = p.props[0];
-      const o = others[Math.floor(Math.random() * others.length)];
+      // 困难档：优先换领先者最好的产业
+      let o;
+      if (aiDifficulty === "hard") {
+        const lead = leaderPlayer();
+        const pool = (lead && lead !== p && lead.alive && lead.props.length > 0) ? [lead] : others;
+        o = pool[Math.floor(Math.random() * pool.length)];
+      } else {
+        o = others[Math.floor(Math.random() * others.length)];
+      }
       o.props.sort((a, b) => b.price - a.price);
       const theirs = o.props[0];
       [mine.owner, theirs.owner] = [theirs.owner, mine.owner];
@@ -756,7 +812,8 @@ async function jarFlow(p) {
     if (pay && p.cash >= CFG.JAR_PAY) { p.cash -= CFG.JAR_PAY; log(`🧼 ${p.name} 花费 ${CFG.JAR_PAY} 洗掉了糖浆`, "l-sys"); }
     else { p.skipTurns += 1; log(`🍯 ${p.name} 被黏在糖罐里，下回合跳过`, "l-bad"); }
   } else {
-    if (p.cash >= 300) { p.cash -= CFG.JAR_PAY; log(`🧼 ${p.name} 花费 ${CFG.JAR_PAY} 洗掉了糖浆`, "l-sys"); }
+    const jarWilling = aiDifficulty === "easy" ? 500 : aiDifficulty === "hard" ? 200 : 300;
+    if (p.cash >= jarWilling) { p.cash -= CFG.JAR_PAY; log(`🧼 ${p.name} 花费 ${CFG.JAR_PAY} 洗掉了糖浆`, "l-sys"); }
     else { p.skipTurns += 1; log(`🍯 ${p.name} 被黏在糖罐里，下回合跳过`, "l-bad"); }
   }
   updateUI();
@@ -809,6 +866,13 @@ function setupUI() {
       b.classList.add("on");
     };
   });
+  document.querySelectorAll(".diff-btns button").forEach(b => {
+    b.onclick = () => {
+      aiDifficulty = b.dataset.d;
+      document.querySelectorAll(".diff-btns button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+    };
+  });
   $("start-btn").onclick = startGame;
 }
 
@@ -822,7 +886,7 @@ function startGame() {
     players.push(makePlayer(ch, i, false));
   }
   running = true;
-  log(`🍯 蜜熊岛年度大富翁大赛开始！${totalPlayers} 位熊熊参赛，最后留下的成为首富！`, "l-card");
+  log(`🍯 蜜熊岛年度大富翁大赛开始！${totalPlayers} 位熊熊参赛（AI 难度：${DIFF_NAME[aiDifficulty]}），最后留下的成为首富！`, "l-card");
   log(`规则：淘汰制 · 踩自己地可升级(最高Lv3) · 垄断过路费×2 · 前 ${CFG.LOAN_LAPS} 圈破产可借款`, "l-sys");
   updateUI();
   nextTurn();
@@ -845,4 +909,6 @@ globalThis.__G = {
   get tiles() { return tiles; },
   get running() { return running; },
   get turnIdx() { return turnIdx; },
+  get difficulty() { return aiDifficulty; },
+  set difficulty(v) { aiDifficulty = v; },
 };
