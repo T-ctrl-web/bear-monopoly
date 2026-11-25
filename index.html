@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>熊熊大富翁 · 可玩原型 v0.4（2D 横屏 · AI 难度）</title>
+<title>熊熊大富翁 · 可玩原型 v0.5</title>
 <style>
   :root {
     --honey: #f7b733;
@@ -35,25 +35,22 @@
     box-shadow: 0 4px 12px rgba(224,142,11,.45); font-size: 16px; white-space: nowrap;
   }
 
-  /* 玩家列表 */
+  /* 玩家徽章栏（v0.5：右上角紧凑，点击看详情） */
   #players {
-    position: absolute; top: 64px; right: 14px; width: 230px;
-    display: flex; flex-direction: column; gap: 8px;
+    position: absolute; top: 60px; right: 14px;
+    display: flex; flex-direction: column; gap: 5px; align-items: flex-end;
   }
-  .player-card {
-    background: var(--panel); border-radius: 12px; padding: 9px 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.12); border: 2px solid transparent;
-    transition: border .2s, transform .2s;
+  .chip {
+    background: var(--panel); border-radius: 999px; padding: 4px 11px;
+    font-size: 12px; font-weight: bold; color: var(--brown);
+    box-shadow: 0 2px 6px rgba(0,0,0,.15); display: flex; align-items: center; gap: 6px;
+    cursor: pointer; border: 2px solid transparent; user-select: none;
+    transition: transform .15s;
   }
-  .player-card.current { border-color: var(--honey); transform: scale(1.03); }
-  .player-card.dead { opacity: .45; filter: grayscale(1); }
-  .player-card .p-head { display: flex; align-items: center; gap: 7px; font-weight: bold; color: var(--brown); }
-  .player-card .dot { width: 13px; height: 13px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
-  .player-card .p-trait { font-size: 11px; color: #a08663; margin-top: 1px; }
-  .player-card .p-money { font-size: 15px; color: #d35400; font-weight: bold; margin-top: 4px; }
-  .player-card .p-money .debt { color: #c0392b; font-size: 11px; margin-left: 6px; }
-  .player-card .p-props { font-size: 11px; color: #7a6a4f; margin-top: 2px; }
-  .badge { display: inline-block; font-size: 10px; background: #ffe3a3; color: #9a6b00; border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
+  .chip:hover { transform: scale(1.06); }
+  .chip.current { border-color: var(--honey); background: #fff3d6; }
+  .chip.dead { opacity: .45; filter: grayscale(1); }
+  .chip .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 
   /* 日志 */
   #log {
@@ -175,13 +172,29 @@
       grid-column: 1 / -1;
     }
   }
+
+  /* ------- 手机端 HUD 紧凑化（v0.5） ------- */
+  @media (max-width: 760px) {
+    #title-tag { font-size: 12px; padding: 5px 10px; top: 8px; left: 8px; }
+    #title-tag small { display: none; }
+    #turn-banner { font-size: 13px; padding: 6px 14px; top: 8px; max-width: 52vw; white-space: normal; text-align: center; }
+    #players { top: 46px; right: 8px; gap: 4px; }
+    .chip { font-size: 11px; padding: 3px 9px; }
+    #log { width: 56vw; max-width: 280px; height: 110px; font-size: 11px; bottom: 10px; left: 10px; padding: 7px 9px; }
+    #roll-btn { font-size: 16px; padding: 10px 30px; bottom: 16px; }
+    #dice-result { bottom: 74px; font-size: 24px; }
+    #modal { padding: 16px 16px; }
+    #modal h3 { font-size: 16px; }
+    #modal .m-body { font-size: 13px; }
+    #modal .card-face .c-name { font-size: 17px; }
+  }
 </style>
 </head>
 <body>
   <div id="scene-container"></div>
 
   <div id="hud">
-    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.4 · 2D 横屏</small></div>
+    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.5 · 2D 横屏</small></div>
     <div id="turn-banner">…</div>
     <div id="players"></div>
     <div id="log"></div>
