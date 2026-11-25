@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>熊熊大富翁 · 可玩原型 v0.1</title>
+<style>
+  :root {
+    --honey: #f7b733;
+    --honey-dark: #e08e0b;
+    --cream: #fff6e3;
+    --brown: #6b4a2b;
+    --panel: rgba(255, 250, 238, 0.94);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #87ceeb; }
+  #scene-container { position: absolute; inset: 0; }
+
+  /* ------- HUD ------- */
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+
+  #title-tag {
+    position: absolute; top: 14px; left: 14px;
+    background: var(--panel); border-radius: 14px; padding: 8px 16px;
+    box-shadow: 0 3px 10px rgba(0,0,0,.15); font-weight: bold; color: var(--brown);
+    font-size: 15px;
+  }
+  #title-tag small { font-weight: normal; color: #a08663; margin-left: 6px; }
+
+  #turn-banner {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, var(--honey), var(--honey-dark));
+    color: #fff; font-weight: bold; padding: 8px 22px; border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(224,142,11,.45); font-size: 16px; white-space: nowrap;
+  }
+
+  /* 玩家列表 */
+  #players {
+    position: absolute; top: 64px; right: 14px; width: 230px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .player-card {
+    background: var(--panel); border-radius: 12px; padding: 9px 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12); border: 2px solid transparent;
+    transition: border .2s, transform .2s;
+  }
+  .player-card.current { border-color: var(--honey); transform: scale(1.03); }
+  .player-card.dead { opacity: .45; filter: grayscale(1); }
+  .player-card .p-head { display: flex; align-items: center; gap: 7px; font-weight: bold; color: var(--brown); }
+  .player-card .dot { width: 13px; height: 13px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .player-card .p-trait { font-size: 11px; color: #a08663; margin-top: 1px; }
+  .player-card .p-money { font-size: 15px; color: #d35400; font-weight: bold; margin-top: 4px; }
+  .player-card .p-money .debt { color: #c0392b; font-size: 11px; margin-left: 6px; }
+  .player-card .p-props { font-size: 11px; color: #7a6a4f; margin-top: 2px; }
+  .badge { display: inline-block; font-size: 10px; background: #ffe3a3; color: #9a6b00; border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
+
+  /* 日志 */
+  #log {
+    position: absolute; left: 14px; bottom: 14px; width: 330px; height: 190px;
+    background: var(--panel); border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 3px 10px rgba(0,0,0,.15); overflow-y: auto; font-size: 12px;
+    color: #5c4a33; line-height: 1.55;
+  }
+  #log .l-card { color: #b8860b; font-weight: bold; }
+  #log .l-bad { color: #c0392b; }
+  #log .l-good { color: #1e8449; }
+  #log .l-sys { color: #999; }
+  #log div { margin-bottom: 3px; border-bottom: 1px dashed #f0e3c8; padding-bottom: 3px; }
+
+  /* 掷骰按钮 */
+  #roll-btn {
+    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, var(--honey), var(--honey-dark));
+    color: #fff; font-size: 20px; font-weight: bold; border: none;
+    padding: 13px 44px; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 6px 16px rgba(224,142,11,.5);
+    display: none;
+  }
+  #roll-btn:hover { filter: brightness(1.08); }
+  #roll-btn:disabled { filter: grayscale(.6); cursor: not-allowed; }
+  #dice-result {
+    position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
+    font-size: 30px; font-weight: bold; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.4);
+    display: none;
+  }
+
+  /* ------- 弹窗 ------- */
+  #modal-mask {
+    position: absolute; inset: 0; background: rgba(60, 40, 10, .45);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #modal {
+    background: var(--cream); border-radius: 18px; padding: 22px 26px;
+    width: 360px; max-width: 92vw; box-shadow: 0 10px 40px rgba(0,0,0,.35);
+    text-align: center; animation: pop .22s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #modal h3 { color: var(--brown); margin-bottom: 10px; font-size: 18px; }
+  #modal .m-body { color: #6a5638; font-size: 14px; line-height: 1.7; margin-bottom: 16px; white-space: pre-line; }
+  #modal .m-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  #modal button {
+    border: none; border-radius: 999px; padding: 9px 26px; font-size: 15px;
+    font-weight: bold; cursor: pointer; color: #fff;
+    background: linear-gradient(135deg, var(--honey), var(--honey-dark));
+    box-shadow: 0 3px 8px rgba(224,142,11,.4);
+  }
+  #modal button.secondary { background: #c9b79a; box-shadow: none; }
+  #modal .card-face {
+    background: linear-gradient(160deg, #fffdf5, #ffedc2);
+    border: 3px solid var(--honey); border-radius: 14px; padding: 16px; margin-bottom: 14px;
+  }
+  #modal .card-face .c-name { font-size: 20px; font-weight: bold; color: #b8860b; margin-bottom: 6px; }
+  #modal .card-face .c-rarity { font-size: 11px; border-radius: 6px; padding: 1px 8px; display: inline-block; margin-bottom: 8px; }
+  #modal .card-face .c-desc { font-size: 13px; color: #6a5638; }
+
+  /* ------- 开局设置 ------- */
+  #setup {
+    position: absolute; inset: 0; background: linear-gradient(160deg, #ffe9b8, #ffd077);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  #setup .box {
+    background: var(--cream); border-radius: 22px; padding: 30px 36px;
+    box-shadow: 0 15px 50px rgba(120, 70, 0, .3); text-align: center; max-width: 560px;
+  }
+  #setup h1 { color: var(--brown); font-size: 30px; margin-bottom: 4px; }
+  #setup .sub { color: #a08663; font-size: 13px; margin-bottom: 18px; }
+  #setup .sec-title { color: var(--brown); font-weight: bold; margin: 12px 0 8px; font-size: 15px; }
+  #setup .count-btns button {
+    border: 2px solid #e8d5ae; background: #fff; color: var(--brown);
+    border-radius: 10px; padding: 7px 22px; margin: 0 5px; font-size: 15px; cursor: pointer; font-weight: bold;
+  }
+  #setup .count-btns button.on { border-color: var(--honey-dark); background: #ffe9b8; }
+  #setup .bears { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #setup .bear {
+    width: 92px; background: #fff; border: 2px solid #e8d5ae; border-radius: 14px;
+    padding: 10px 6px; cursor: pointer; transition: transform .15s, border .15s;
+  }
+  #setup .bear:hover { transform: translateY(-3px); }
+  #setup .bear.on { border-color: var(--honey-dark); background: #fff3d6; transform: translateY(-3px); }
+  #setup .bear .swatch { width: 34px; height: 34px; border-radius: 50%; margin: 0 auto 6px; border: 3px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.25); }
+  #setup .bear .b-name { font-weight: bold; color: var(--brown); font-size: 14px; }
+  #setup .bear .b-trait { font-size: 10px; color: #a08663; margin-top: 3px; line-height: 1.4; }
+  #setup #start-btn {
+    margin-top: 20px; border: none; background: linear-gradient(135deg, var(--honey), var(--honey-dark));
+    color: #fff; font-size: 18px; font-weight: bold; padding: 12px 52px; border-radius: 999px;
+    cursor: pointer; box-shadow: 0 6px 16px rgba(224,142,11,.5);
+  }
+  #setup .tip { font-size: 11px; color: #b09a76; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <div id="scene-container"></div>
+
+  <div id="hud">
+    <div id="title-tag">🍯 熊熊大富翁<small>可玩原型 v0.1</small></div>
+    <div id="turn-banner">…</div>
+    <div id="players"></div>
+    <div id="log"></div>
+    <div id="dice-result"></div>
+    <button id="roll-btn">🎲 掷骰子</button>
+    <div id="modal-mask"><div id="modal"></div></div>
+  </div>
+
+  <div id="setup">
+    <div class="box">
+      <h1>🍯 熊熊大富翁</h1>
+      <div class="sub">蜜熊岛年度大富翁大赛 · 淘汰制 · 最后留下的熊熊成为年度首富！</div>
+      <div class="sec-title">参赛熊熊数量（你是其中 1 位真人，其余为 AI 熊）</div>
+      <div class="count-btns">
+        <button data-n="3" class="on">3 位</button>
+        <button data-n="4">4 位</button>
+      </div>
+      <div class="sec-title">选择你的熊熊角色</div>
+      <div class="bears" id="bear-pick"></div>
+      <button id="start-btn">开始比赛！</button>
+      <div class="tip">操作：鼠标拖动旋转视角 · 滚轮缩放 · 踩到产业格会弹出购买/升级窗口</div>
+    </div>
+  </div>
+
+  <script src="lib/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
