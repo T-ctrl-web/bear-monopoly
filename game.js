@@ -101,12 +101,20 @@ const $ = id => document.getElementById(id);
 const turnBanner = $("turn-banner"), playersEl = $("players"), logEl = $("log"),
       rollBtn = $("roll-btn"), diceEl = $("dice-result"), mask = $("modal-mask"), modal = $("modal");
 
+/* 日志改为单行滚动条（v0.6：不再用大方块挡视野） */
+let logTimer = null;
+function clearLog() {
+  logEl.innerHTML = "";
+  logEl.classList.remove("show", "l-bad", "l-good", "l-card", "l-sys");
+}
 function log(msg, cls) {
-  const d = document.createElement("div");
-  if (cls) d.className = cls;
-  d.textContent = msg;
-  logEl.appendChild(d);
-  logEl.scrollTop = logEl.scrollHeight;
+  // 永久性提示（规则说明等）走 l-sys 时不刷新计时器也可以，统一处理
+  logEl.textContent = msg;
+  logEl.className = "show" + (cls ? " " + cls : "");
+  clearTimeout(logTimer);
+  logTimer = setTimeout(() => {
+    if (!logEl.classList.contains("keep")) logEl.classList.remove("show");
+  }, 600);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -185,10 +193,17 @@ function initScene() {
   addEventListener("resize", resize);
   resize();
 
-  // 视角控制：拖动平移 + 滚轮缩放
-  let dragging = false, lastX = 0, lastY = 0;
-  canvas.addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
-  addEventListener("pointerup", () => dragging = false);
+  // 视角控制：拖动平移 + 滚轮缩放；点击（未拖动）时命中格子
+  let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+  canvas.addEventListener("pointerdown", e => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; downX = e.clientX; downY = e.clientY;
+  });
+  addEventListener("pointerup", e => {
+    if (dragging && Math.hypot(e.clientX - downX, e.clientY - downY) < 8) {
+      handleCanvasClick(e.clientX, e.clientY);
+    }
+    dragging = false;
+  });
   addEventListener("pointermove", e => {
     if (!dragging) return;
     viewOX += (e.clientX - lastX) / viewScale;
@@ -207,6 +222,67 @@ function initScene() {
     requestAnimationFrame(loop);
     if (dirty) { dirty = false; render(); }
   })();
+}
+
+/* 屏幕坐标 -> 棋盘逻辑坐标 */
+function screenToBoard(clientX, clientY) {
+  const s = viewScale * fitScale;
+  return {
+    px: (clientX - innerWidth / 2) / s - viewOX,
+    py: (clientY - innerHeight / 2) / s - viewOY,
+  };
+}
+
+/* 点击命中：优先 "没走到的无主领地格"（手动触发结算），其次领地详情，最后卡牌区 */
+let pendingTile = null;   // 真人停留已结算过的格子，点击可再看/操作
+function handleCanvasClick(clientX, clientY) {
+  if (!running || !canvas) return;
+  const { px, py } = screenToBoard(clientX, clientY);
+  const half = TILE / 2;
+
+  // 卡牌区点击 -> 看卡池
+  if (Math.abs(px - (-1.62 * TILE)) < TILE * 0.9 && Math.abs(py + 0.55 * TILE) < TILE * 0.58) return showCardPool("destiny");
+  if (Math.abs(px - (1.62 * TILE)) < TILE * 0.9 && Math.abs(py + 0.55 * TILE) < TILE * 0.58) return showCardPool("chance");
+
+  // 格子命中
+  for (const t of tiles) {
+    const p = tilePx(t.pos);
+    if (Math.abs(px - p.px) <= half && Math.abs(py - p.py) <= half) {
+      const human = players.find(x => x.isHuman && x.alive);
+      if (pendingTile === t && human && human.pos === t.pos) return manualResolve(t);
+      return showTileInfo(t);
+    }
+  }
+}
+
+function showCardPool() {
+  const rows = CARDS.map(c => `「${c.name}」${c.desc}`).join("\n");
+  showModal({
+    title: "🎴 卡池一览",
+    body: `命运卡与机会卡共用同一个卡池（共 ${CARDS.length} 张，按权重抽取）。\n\n${rows}`,
+    buttons: [{ label: "知道了", value: true, secondary: true }],
+  });
+}
+
+function showTileInfo(t) {
+  const human = players.find(x => x.isHuman && x.alive);
+  let body = "";
+  if (t.type === "land") {
+    body = `${t.region} · 地价 ${t.price} 熊熊币\n` +
+      (t.owner
+        ? `业主：${t.owner.name}  Lv${t.level}\n当前过路费 ${computeRent(t)}${monopolyOwner(t.region, t.owner) ? "（垄断×2）" : ""}\n` +
+          (t.owner === human ? `升级费 ${t.level >= CFG.MAX_LEVEL ? "已满级" : upgradeCost(t, human)}` : "")
+        : "无主，走到这里可购买");
+  } else if (t.type === "nest") {
+    body = "抽一张命运/机会卡";
+  } else if (t.type === "jar") {
+    body = `被糖浆黏住：支付 ${CFG.JAR_PAY} 或停 1 回合（可用逃脱卡）`;
+  } else if (t.type === "start") {
+    body = `路过领 ${subsidy()} 熊熊币（并偿还欠款）`;
+  } else {
+    body = "花田小径，无事发生";
+  }
+  showModal({ title: `📍 ${t.name}`, body, buttons: [{ label: "关闭", value: true, secondary: true }] });
 }
 
 function invalidate() { dirty = true; }
@@ -244,28 +320,49 @@ function render() {
   roundRect(-5 * TILE - 8, -4 * TILE - 8, 10 * TILE + 16, 8 * TILE + 16, 22);
   ctx.stroke();
 
-  // 中央装饰小树
-  decoTrees.forEach(t => {
-    const px = t.x * TILE, py = t.z * TILE;
-    ctx.font = `${TILE * 0.5}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(t.dark ? "🌲" : "🌳", px, py);
-  });
+  // 中央场地：两个卡牌区（命运 / 机会）
+  drawCardZone(-1.62 * TILE, -0.55 * TILE, "🎴 命运", "#8a7fb8", "好事坏事，天注定");
+  drawCardZone(1.62 * TILE, -0.55 * TILE, "🃏 机会", "#f0a63c", "下一次，轮到你运气");
 
   // 中央蜜金树 + 赛事横幅
-  ctx.font = `${TILE * 1.3}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("🌳", 0, -TILE * 0.35);
-  ctx.font = `bold ${TILE * 0.28}px "Microsoft YaHei", sans-serif`;
+  ctx.font = `${TILE * 0.72}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🌳", 0, -2.35 * TILE);
+  ctx.font = `bold ${TILE * 0.22}px "Microsoft YaHei", sans-serif`;
   ctx.fillStyle = "#6b4a2b";
-  ctx.fillText("🍯 蜜熊岛大富翁大赛 🍯", 0, TILE * 0.55);
-  ctx.font = `${TILE * 0.18}px "Microsoft YaHei", sans-serif`;
-  ctx.fillStyle = "#8a6d45";
-  ctx.fillText("冠军将戴上金蜂蜜王冠", 0, TILE * 0.85);
+  ctx.fillText("🍯 蜜熊岛大富翁大赛", 0, -1.35 * TILE);
 
   // 棋盘格
   tiles.forEach(t => drawTile(t, tilePx(t.pos)));
 
   // 熊熊（最后画，永远在最上层）
   players.filter(p => p.alive).forEach(p => drawBear(p));
+}
+
+/* 卡牌区（中央场地装饰 + 可点查看卡池） */
+function drawCardZone(cx, cy, title, color, sub) {
+  const w = TILE * 1.7, h = TILE * 1.05;
+  ctx.save();
+  roundRect(cx - w / 2, cy - h / 2, w, h, 12);
+  ctx.fillStyle = "rgba(255,253,245,.92)"; ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
+  // 叠放的两张卡片
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.13);
+  roundRect(-TILE * 0.28, -TILE * 0.34, TILE * 0.56, TILE * 0.68, 6);
+  ctx.fillStyle = color; ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.restore();
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(0.1);
+  roundRect(-TILE * 0.28, -TILE * 0.34, TILE * 0.56, TILE * 0.68, 6);
+  ctx.fillStyle = "#fffdf5"; ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `bold ${TILE * 0.2}px "Microsoft YaHei", sans-serif`;
+  ctx.fillStyle = "#4a3316";
+  ctx.fillText(title, cx, cy + h * 0.32);
+  ctx.font = `${TILE * 0.13}px "Microsoft YaHei", sans-serif`;
+  ctx.fillStyle = "#8a6d45";
+  ctx.fillText(sub, cx, cy + h * 0.46 + 2);
+  ctx.restore();
 }
 
 function drawTile(t, { px, py }) {
@@ -320,9 +417,15 @@ function drawTile(t, { px, py }) {
     }
     // 产业名
     const nm = t.name.length > 5 ? t.name.slice(0, 5) : t.name;
-    ctx.font = `${TILE * 0.125}px "Microsoft YaHei", sans-serif`;
-    ctx.fillStyle = t.owner ? "#4a3316" : "rgba(74,51,22,.75)";
-    ctx.fillText(nm, px, py + TILE * 0.3);
+    ctx.font = `bold ${TILE * 0.14}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = t.owner ? "#3a2608" : "rgba(58,38,8,.85)";
+    ctx.fillText(nm, px, py - TILE * 0.02);
+    // 地价（醒目，标在格子中下部）
+    ctx.font = `bold ${TILE * 0.2}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = "#c0392b";
+    ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 3;
+    ctx.strokeText(`$${t.price}`, px, py + TILE * 0.28);
+    ctx.fillText(`$${t.price}`, px, py + TILE * 0.28);
   } else {
     ctx.font = `${TILE * 0.2}px sans-serif`;
     ctx.fillText("🌼", px, py);
@@ -625,17 +728,63 @@ async function movePlayer(p, steps, backward) {
   updateUI();
 }
 
-/* ---------------- 落格结算 ---------------- */
+/* ---------------- 落格结算 ----------------
+ * v0.6：领地格不再自动弹窗。真人走到领地时只高亮提示「点击该格操作」，
+ * 由玩家点格子再决定买/升级；AI 仍自动决策。非领地格（蜂巢/糖罐/起点）照旧自动结算。
+ */
 async function resolveTile(p) {
   if (!p.alive || !running) return;
+  pendingTile = null;
   const t = tiles[p.pos];
-  if (t.type === "land") await resolveLand(p, t);
-  else if (t.type === "nest") await nestFlow(p);
+  if (t.type === "land") {
+    if (p.isHuman) {
+      if (t.owner && t.owner !== p) { await payRentByClick(p, t); return; }
+      pendingTile = t;
+      showTilePrompt(t, p);
+      return;               // 不阻塞流程，玩家点击后再走 manualResolve
+    }
+    await resolveLand(p, t);
+  } else if (t.type === "nest") await nestFlow(p);
   else if (t.type === "jar") await jarFlow(p);
-  else if (t.type === "path") { log(`🌿 ${p.name} 在花田小径散了个步`); await sleep(500); }
+  else if (t.type === "path") { log(`🌿 ${p.name} 在花田小径散了个步`); await sleep(400); }
 }
 
-async function resolveLand(p, t) {
+/* 领地高亮提示条 */
+function showTilePrompt(t, p) {
+  const act = !t.owner ? `点击买下（$ ${buyPrice(t, p)}）`
+    : t.owner === p ? (t.level >= CFG.MAX_LEVEL ? "已满级" : `点击升级（$ ${upgradeCost(t, p)}）`)
+    : `业主 ${t.owner.name} · 过路费 ${computeRent(t)}`;
+  const bar = $("tile-hint");
+  bar.innerHTML = `📍 <b>${t.name}</b> · ${act}${t.owner && t.owner !== p ? "" : " · 点击格子操作"}`;
+  bar.style.display = "block";
+  invalidate();
+}
+function hideTilePrompt() {
+  const bar = $("tile-hint");
+  if (bar) bar.style.display = "none";
+}
+
+/* 玩家点击自己停留的领地格 -> 执行购买/升级/付过路费 */
+async function manualResolve(t) {
+  const p = players.find(x => x.isHuman && x.alive);
+  if (!p || !pendingTile || pendingTile !== t) return;
+  pendingTile = null;
+  hideTilePrompt();
+  await resolveLand(p, t, true);
+}
+
+/* 真人踩到他人领地：先提示，点击格子后确认付过路费（v0.6） */
+async function payRentByClick(p, t) {
+  const rent = computeRent(t);
+  log(`⚠️ ${p.name} 踩到 ${t.owner.name} 的「${t.name}」，点击该格支付过路费 ${rent}`, "l-bad");
+  pendingTile = t;
+  const bar = $("tile-hint");
+  bar.innerHTML = `💰 踩到 <b>${t.owner.name}</b> 的「${t.name}」· 点击该格支付过路费 <b>$ ${rent}</b>`;
+  bar.style.display = "block";
+  invalidate();
+}
+
+async function resolveLand(p, t, fromClick) {
   if (!t.owner) {
     const price = buyPrice(t, p);
     let bought = false;
@@ -686,6 +835,7 @@ async function resolveLand(p, t) {
     updateUI();
   } else {
     const rent = computeRent(t);
+    if (!fromClick) pendingTile = null;
     log(`⚠️ ${p.name} 踩到了 ${t.owner.name} 的「${t.name}」（Lv${t.level}${monopolyOwner(t.region, t.owner) ? " · 垄断×2" : ""}），需付过路费 ${rent}`, "l-bad");
     await sleep(600);
     await charge(p, rent, t.owner, `${t.name} 过路费`);
@@ -915,4 +1065,5 @@ globalThis.__G = {
   get turnIdx() { return turnIdx; },
   get difficulty() { return aiDifficulty; },
   set difficulty(v) { aiDifficulty = v; },
+  get pendingTile() { return pendingTile; },
 };
