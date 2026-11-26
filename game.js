@@ -25,7 +25,7 @@ const CFG = {
 
 /* ---------------- 棋盘（32 格单环） ---------------- */
 const REGION_COEF = { "蜂蜜广场": 1.5, "蜂蜜花田": 1.3, "渔夫湾": 1.15, "竹笋竹林": 1.0, "蘑菇密林": 0.85 };
-const REGION_COLOR = { "蜂蜜广场": 0xe07a5f, "蜂蜜花田": 0xf0c95c, "渔夫湾": 0x5fa8d3, "竹笋竹林": 0x9fd8a8, "蘑菇密林": 0x8a7fb8 };
+const REGION_COLOR = { "蜂蜜广场": 0xd98a6a, "蜂蜜花田": 0xe0b955, "渔夫湾": 0x7aa8cc, "竹笋竹林": 0x9cc4a5, "蘑菇密林": 0xada0d0 };
 
 const LANDS = [
   [1, "蜂蜜广场", "熊熊百货屋"], [2, "蜂蜜广场", "蜂蜜面包房"], [4, "蜂蜜广场", "镇中心邮局"], [13, "蜂蜜广场", "蜂蜜电影院"],
@@ -326,27 +326,43 @@ function roundRect(x, y, w, h, r) {
 function render() {
   const W = canvas.width, H = canvas.height;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // 岛屿草地背景
-  ctx.fillStyle = "#a8d878"; ctx.fillRect(0, 0, W, H);
+  // 深林绿桌面（v0.9 高级配色）
+  const bg = ctx.createRadialGradient(W / 2, H * 0.32, H * 0.1, W / 2, H / 2, Math.max(W, H) * 0.75);
+  bg.addColorStop(0, "#1d4a33");
+  bg.addColorStop(0.6, "#123223");
+  bg.addColorStop(1, "#081c12");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   ctx.setTransform(DPR * viewScale * fitScale, 0, 0, DPR * viewScale * fitScale,
     DPR * (W / DPR / 2 + viewOX * viewScale * fitScale), DPR * (H / DPR / 2 + viewOY * viewScale * fitScale));
 
-  // 中央草坪描边
-  ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 3;
-  roundRect(-5 * TILE - 8, -4 * TILE - 8, 10 * TILE + 16, 8 * TILE + 16, 22);
-  ctx.stroke();
+  // 米色绒面棋盘底板（带投影 + 金线内框）
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 34; ctx.shadowOffsetY = 14;
+  roundRect(-5.35 * TILE, -4.35 * TILE, 10.7 * TILE, 8.7 * TILE, 26);
+  const bp = ctx.createLinearGradient(0, -4.35 * TILE, 0, 4.35 * TILE);
+  bp.addColorStop(0, "#f9f3e2");
+  bp.addColorStop(1, "#eee1c2");
+  ctx.fillStyle = bp; ctx.fill();
+  ctx.restore();
+  roundRect(-5.35 * TILE, -4.35 * TILE, 10.7 * TILE, 8.7 * TILE, 26);
+  ctx.strokeStyle = "rgba(212,175,55,.65)"; ctx.lineWidth = 2.5; ctx.stroke();
+  roundRect(-5.18 * TILE, -4.18 * TILE, 10.36 * TILE, 8.36 * TILE, 20);
+  ctx.strokeStyle = "rgba(212,175,55,.22)"; ctx.lineWidth = 1.2; ctx.stroke();
 
   // 中央场地：两个卡牌区（命运 / 机会）
   drawCardZone(-1.62 * TILE, -0.55 * TILE, "🎴 命运", "#8a7fb8", "好事坏事，天注定");
   drawCardZone(1.62 * TILE, -0.55 * TILE, "🃏 机会", "#f0a63c", "下一次，轮到你运气");
 
-  // 中央蜜金树 + 赛事横幅
+  // 中央蜜金树 + 赛事横幅（金字）
   ctx.font = `${TILE * 0.72}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText("🌳", 0, -2.35 * TILE);
-  ctx.font = `bold ${TILE * 0.22}px "Microsoft YaHei", sans-serif`;
-  ctx.fillStyle = "#6b4a2b";
-  ctx.fillText("🍯 蜜熊岛大富翁大赛", 0, -1.35 * TILE);
+  ctx.font = `900 ${TILE * 0.24}px "Noto Serif SC", "Microsoft YaHei", serif`;
+  ctx.fillStyle = "#9a7b1e";
+  ctx.fillText("蜜 熊 岛 大 富 翁", 0, -1.35 * TILE);
+  ctx.font = `500 ${TILE * 0.13}px "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+  ctx.fillStyle = "#a5926a";
+  ctx.fillText("年度财富之争 · 淘汰制", 0, -1.02 * TILE);
 
   // 棋盘格
   tiles.forEach(t => drawTile(t, tilePx(t.pos)));
@@ -355,46 +371,64 @@ function render() {
   players.filter(p => p.alive).forEach(p => drawBear(p));
 }
 
-/* 卡牌区（中央场地装饰 + 可点查看卡池） */
+/* 卡牌区（v0.9：玻璃卡座 + 带影卡叠） */
 function drawCardZone(cx, cy, title, color, sub) {
-  const w = TILE * 1.7, h = TILE * 1.05;
+  const w = TILE * 1.85, h = TILE * 1.12;
   ctx.save();
-  roundRect(cx - w / 2, cy - h / 2, w, h, 12);
-  ctx.fillStyle = "rgba(255,253,245,.92)"; ctx.fill();
-  ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
-  // 叠放的两张卡片
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.13);
-  roundRect(-TILE * 0.28, -TILE * 0.34, TILE * 0.56, TILE * 0.68, 6);
-  ctx.fillStyle = color; ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
-  ctx.restore();
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(0.1);
-  roundRect(-TILE * 0.28, -TILE * 0.34, TILE * 0.56, TILE * 0.68, 6);
-  ctx.fillStyle = "#fffdf5"; ctx.fill();
-  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
-  ctx.restore();
+  // 卡座底板
+  ctx.shadowColor = "rgba(0,0,0,.28)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 5;
+  roundRect(cx - w / 2, cy - h / 2, w, h, 14);
+  ctx.fillStyle = "rgba(255,252,244,.94)"; ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.stroke();
+  roundRect(cx - w / 2 + 4, cy - h / 2 + 4, w - 8, h - 8, 11);
+  ctx.strokeStyle = "rgba(212,175,55,.35)"; ctx.lineWidth = 1; ctx.stroke();
+  // 叠放的三张卡（带投影，最上面一张盖金纹背）
+  const stack = [[-6, 3, -0.16], [4, -2, 0.12], [0, 0, -0.02]];
+  stack.forEach(([ox, oy, rot], i) => {
+    ctx.save(); ctx.translate(cx + ox, cy + oy - TILE * 0.02); ctx.rotate(rot);
+    if (i < 2) ctx.shadowColor = "rgba(0,0,0,.18)", ctx.shadowBlur = 5, ctx.shadowOffsetY = 2;
+    roundRect(-TILE * 0.26, -TILE * 0.33, TILE * 0.52, TILE * 0.66, 7);
+    if (i < 2) { ctx.fillStyle = css(typeof color === "string" ? 0xffffff : color); ctx.globalAlpha = 0.01; ctx.fill(); ctx.globalAlpha = 1; ctx.shadowColor = "transparent"; }
+    ctx.fillStyle = i === 2 ? "#fffdf5" : "#f3e9cf";
+    ctx.fill();
+    ctx.strokeStyle = i === 2 ? color : "rgba(150,120,60,.45)"; ctx.lineWidth = 2; ctx.stroke();
+    if (i === 2) {
+      ctx.strokeStyle = "rgba(212,175,55,.5)"; ctx.lineWidth = 1;
+      roundRect(-TILE * 0.21, -TILE * 0.28, TILE * 0.42, TILE * 0.56, 5); ctx.stroke();
+    }
+    ctx.restore();
+  });
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `bold ${TILE * 0.2}px "Microsoft YaHei", sans-serif`;
+  ctx.font = `900 ${TILE * 0.2}px "Noto Serif SC", "Microsoft YaHei", serif`;
   ctx.fillStyle = "#4a3316";
-  ctx.fillText(title, cx, cy + h * 0.32);
-  ctx.font = `${TILE * 0.13}px "Microsoft YaHei", sans-serif`;
-  ctx.fillStyle = "#8a6d45";
-  ctx.fillText(sub, cx, cy + h * 0.46 + 2);
+  ctx.fillText(title, cx, cy + h * 0.30);
+  ctx.font = `500 ${TILE * 0.12}px "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+  ctx.fillStyle = "#9a8358";
+  ctx.fillText(sub, cx, cy + h * 0.44);
   ctx.restore();
 }
 
 function drawTile(t, { px, py }) {
   const half = TILE / 2 - 3;
-  let fill;
-  if (t.type === "land") fill = css(REGION_COLOR[t.region]);
-  else if (t.type === "start") fill = "#f7b733";
-  else if (t.type === "nest") fill = "#ffe066";
-  else if (t.type === "jar") fill = "#f39fb6";
-  else fill = "#f2ecdc";
+  let fill, fillNum;
+  if (t.type === "land") { fillNum = REGION_COLOR[t.region]; fill = css(fillNum); }
+  else if (t.type === "start") { fillNum = 0xf0b93c; fill = css(fillNum); }
+  else if (t.type === "nest") { fillNum = 0xf2cf5e; fill = css(fillNum); }
+  else if (t.type === "jar") { fillNum = 0xe89ab2; fill = css(fillNum); }
+  else { fillNum = 0xf0e8d2; fill = css(fillNum); }
 
-  // 格子底板
+  // 格子底板（v0.9：投影 + 纵向渐变，微立体）
+  ctx.save();
+  ctx.shadowColor = "rgba(60,42,10,.30)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 3;
   roundRect(px - half, py - half, half * 2, half * 2, 10);
-  ctx.fillStyle = fill; ctx.fill();
-  ctx.strokeStyle = "rgba(90,60,20,.25)"; ctx.lineWidth = 1.5; ctx.stroke();
+  const tg = ctx.createLinearGradient(px, py - half, px, py + half);
+  tg.addColorStop(0, shade(fillNum, 1.12));
+  tg.addColorStop(1, shade(fillNum, 0.87));
+  ctx.fillStyle = tg; ctx.fill();
+  ctx.restore();
+  roundRect(px - half, py - half, half * 2, half * 2, 10);
+  ctx.strokeStyle = "rgba(90,60,20,.28)"; ctx.lineWidth = 1.5; ctx.stroke();
 
   // 业主色边框
   if (t.type === "land" && t.owner) {
