@@ -80,11 +80,16 @@ const CARDS = [
 ];
 const BLESSING_FALLBACK = { name: "蜜金树祝福", rarity: "稀有", mode: "instant", amount: 150, weight: 0, desc: "月芽儿的占卜扭转了厄运，+150 熊熊币。", ref: "角色特性" };
 
-function drawCard() {
-  const total = CARDS.reduce((s, c) => s + c.weight, 0);
-  let r = Math.random() * total;
-  for (const c of CARDS) { r -= c.weight; if (r <= 0) return c; }
-  return CARDS[0];
+/* 实体牌堆：按权重把卡池展开成实体卡并洗匀，抽一张少一张，抽空重洗（v0.8） */
+function makeDeck() {
+  const d = [];
+  CARDS.forEach(c => { for (let i = 0; i < c.weight; i++) d.push(c); });
+  for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+  return d;
+}
+function drawFrom(t) {
+  if (!t.deck || t.deck.length === 0) t.deck = makeDeck();
+  return t.deck.pop();
 }
 
 /* ---------------- 全局状态 ---------------- */
@@ -259,7 +264,7 @@ function showCardPool() {
   const rows = CARDS.map(c => `「${c.name}」${c.desc}`).join("\n");
   showModal({
     title: "🎴 卡池一览",
-    body: `命运卡与机会卡共用同一个卡池（共 ${CARDS.length} 张，按权重抽取）。\n\n${rows}`,
+    body: `命运卡与机会卡共用同一卡池（共 ${CARDS.length} 种，按权重洗入 4 处蜂巢牌堆）。\n踩到幸运蜂巢时会摊开 3 张背面朝上的卡，由当前玩家亲手点选一张翻开。\n\n${rows}`,
     buttons: [{ label: "知道了", value: true, secondary: true }],
   });
 }
@@ -279,7 +284,7 @@ function showTileInfo(t) {
         ? `\n你下一次升级：$${upgradeCost(t, human)}${p_hasPromo(human) ? "（大促销减半）" : ""}`
         : "");
   } else if (t.type === "nest") {
-    body = "抽一张命运/机会卡";
+    body = `实体蜂巢牌堆：摊开 3 张背面朝上的卡，由你亲手点选一张翻开\n\n当前牌堆剩余 ${t.deck ? t.deck.length : 0} 张（抽空自动重洗）`;
   } else if (t.type === "jar") {
     body = `被糖浆黏住：支付 ${CFG.JAR_PAY} 或停 1 回合（可用逃脱卡）`;
   } else if (t.type === "start") {
@@ -400,11 +405,21 @@ function drawTile(t, { px, py }) {
     ctx.fillStyle = "#6b4a2b";
     ctx.fillText("起点", px, py + TILE * 0.24);
   } else if (t.type === "nest") {
-    ctx.font = `${TILE * 0.38}px sans-serif`;
-    ctx.fillText("🐝", px, py - TILE * 0.1);
-    ctx.font = `${TILE * 0.13}px "Microsoft YaHei", sans-serif`;
+    // 实体牌堆：几张错开的卡背 + 剩余张数（v0.8）
+    ctx.save();
+    [[-5, 3, -0.16], [3, -2, 0.12], [0, 0, 0]].forEach(([ox, oy, rot]) => {
+      ctx.save(); ctx.translate(px + ox, py + oy + TILE * 0.04); ctx.rotate(rot);
+      roundRect(-TILE * 0.17, -TILE * 0.22, TILE * 0.34, TILE * 0.44, 4);
+      ctx.fillStyle = "#fffdf5"; ctx.fill();
+      ctx.strokeStyle = "#e0a52e"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    });
+    ctx.font = `${TILE * 0.26}px sans-serif`;
+    ctx.fillText("🐝", px, py - TILE * 0.16);
+    ctx.font = `bold ${TILE * 0.15}px "Microsoft YaHei", sans-serif`;
     ctx.fillStyle = "#7a5b00";
-    ctx.fillText("幸运蜂巢", px, py + TILE * 0.26);
+    ctx.fillText(`牌堆 ${t.deck ? t.deck.length : 0}`, px, py + TILE * 0.32);
+    ctx.restore();
   } else if (t.type === "jar") {
     ctx.font = `${TILE * 0.38}px sans-serif`;
     ctx.fillText("🍯", px, py - TILE * 0.1);
@@ -488,7 +503,7 @@ function drawBear(p) {
 async function hopBear(p, targetPos) {
   const from = bears[p.id] ? { ...bears[p.id] } : bearSlot(p.pos, p.idx);
   const to = bearSlot(targetPos, p.idx);
-  const t0 = performance.now(), dur = 200;
+  const t0 = performance.now(), dur = 260;
   return new Promise(res => {
     (function step() {
       const k = Math.min(1, (performance.now() - t0) / dur);
@@ -705,7 +720,7 @@ async function nextTurn() {
   } else {
     turnBanner.textContent = `🤖 ${p.name} 正在思考…`;
     rollBtn.style.display = "none";
-    await sleep(800);
+    await sleep(1100);
     await doRoll(p);
     if (!running || checkWinner()) return;
     turnIdx = (turnIdx + 1) % players.length;
@@ -719,7 +734,7 @@ async function doRoll(p) {
   diceEl.textContent = `🎲 ${n}`;
   diceEl.style.display = "block";
   log(`🎲 ${p.name} 掷出 ${n} 点`);
-  await sleep(450);
+  await sleep(700);
   await movePlayer(p, n, false);
   diceEl.style.display = "none";
   if (p.alive) await resolveTile(p);
@@ -751,9 +766,9 @@ async function resolveTile(p) {
       return;
     }
     await resolveLand(p, t);
-  } else if (t.type === "nest") await nestFlow(p);
+  } else if (t.type === "nest") await nestFlow(p, t);
   else if (t.type === "jar") await jarFlow(p);
-  else if (t.type === "path") { log(`🌿 ${p.name} 在花田小径散了个步`); await sleep(400); }
+  else if (t.type === "path") { log(`🌿 ${p.name} 在花田小径散了个步`); await sleep(600); }
 }
 
 /* 领地高亮提示条 */
@@ -843,24 +858,81 @@ async function resolveLand(p, t, fromClick) {
     const rent = computeRent(t);
     if (!fromClick) pendingTile = null;
     log(`⚠️ ${p.name} 踩到了 ${t.owner.name} 的「${t.name}」（Lv${t.level}${monopolyOwner(t.region, t.owner) ? " · 垄断×2" : ""}），需付过路费 ${rent}`, "l-bad");
-    await sleep(600);
+    await sleep(900);
     await charge(p, rent, t.owner, `${t.name} 过路费`);
   }
 }
 
-async function nestFlow(p) {
-  let card = drawCard();
+/* v0.8：蜂巢实体牌堆抽卡——摊开 3 张背面朝上的卡，真人点选一张翻开 */
+async function nestFlow(p, t) {
+  const hand = [drawFrom(t), drawFrom(t), drawFrom(t)];
+  log(`🃏 ${p.name} 翻开蜂巢牌堆，摊出 3 张牌…`, "l-card");
+  invalidate();
+  let card;
+  if (p.isHuman) {
+    card = await showPickSpread(p, hand, t);
+  } else {
+    await sleep(1000);
+    card = aiPickCard(p, hand);
+  }
   if (p.char.id === "yueyaer" && card.amount < 0 && Math.random() < 0.5) {
     card = BLESSING_FALLBACK;
     log(`🌙 ${p.name} 的占卜扭转了厄运（角色特性）`, "l-good");
   }
   log(`🃏 ${p.name} 抽到了「${card.name}」`, "l-card");
-  await showModal({
-    title: `🐝 幸运蜂巢 · ${p.name} 抽卡`,
-    cardFace: card,
-    buttons: [{ label: "执行效果", value: true }],
-  });
+  if (!p.isHuman) {
+    await showModal({
+      title: `🐝 幸运蜂巢 · ${p.name} 选牌`,
+      cardFace: card,
+      buttons: [{ label: "执行效果", value: true }],
+    });
+  }
   await applyCard(p, card);
+}
+
+/* AI 选牌：给手牌打分，难度越高越会挑 */
+function cardScore(c) {
+  if (c.mode === "hold") return c.hold === "escape" ? 140 : 110;
+  if (c.amount > 0) return c.amount;
+  if (c.amount < 0) return c.amount * 0.8;
+  if (c.name === "顺风快递" || c.name === "前往蜜金树") return 170;
+  if (c.name === "冬眠") return -80;
+  if (c.name === "迷路") return -20;
+  return 20;
+}
+function aiPickCard(p, hand) {
+  const sorted = [...hand].sort((a, b) => cardScore(b) - cardScore(a));
+  if (aiDifficulty === "hard") return sorted[0];
+  if (aiDifficulty === "normal") return sorted[Math.random() < 0.5 ? 0 : 1];
+  return hand[Math.floor(Math.random() * hand.length)];
+}
+
+/* 真人摊牌选卡：点击卡背 → 翻面展示 → 1.4s 后自动收牌 */
+function showPickSpread(p, hand, t) {
+  return new Promise(resolve => {
+    const rc = r => ({ "普通": "#8bc34a", "稀有": "#42a5f5", "史诗": "#ab47bc", "常备": "#78909c" }[r] || "#999");
+    let html = `<h3>🐝 幸运蜂巢 · ${p.name} 抽卡</h3>
+      <div class="pick-sub">牌堆剩 ${t.deck.length} 张 · 蜂婆婆把牌摊开了，点选一张翻开</div>
+      <div class="pick-row">`;
+    hand.forEach((c, i) => { html += `<div class="pick-card" data-i="${i}"><div class="pick-back">🐝<span>?</span></div></div>`; });
+    html += `</div>`;
+    modal.innerHTML = html;
+    mask.style.display = "flex";
+    modal.querySelectorAll(".pick-card").forEach(el => {
+      el.onclick = () => {
+        const c = hand[+el.dataset.i];
+        const col = rc(c.rarity);
+        el.classList.add("picked");
+        el.innerHTML = `<div class="pick-front" style="border-color:${col}">
+          <div class="c-rarity" style="background:${col}22;color:${col}">🌈 ${c.rarity} · ${c.ref || ""}</div>
+          <div class="c-name">🍯 ${c.name}</div>
+          <div class="c-desc">${c.desc}</div>
+        </div>`;
+        modal.querySelectorAll(".pick-card").forEach(o => { if (o !== el) o.classList.add("dim"); });
+        setTimeout(() => { mask.style.display = "none"; resolve(c); }, 1400);
+      };
+    });
+  });
 }
 
 async function applyCard(p, card) {
