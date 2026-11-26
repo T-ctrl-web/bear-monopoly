@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>熊熊大富翁 · 蜜熊岛大赛 v0.9</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>熊熊大富翁 · 蜜熊岛大赛 v1.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -17,7 +17,6 @@
     --ink: #2d2418;
     --ink-soft: #6b5d43;
     --forest: #0e2a1c;
-    --forest-hi: #1c4430;
     --glass: rgba(20, 34, 24, 0.55);
     --glass-brd: rgba(242, 201, 76, 0.28);
   }
@@ -27,109 +26,117 @@
     font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     background: #0e2a1c; color: var(--ink);
   }
+  #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+
+  /* ============ 上屏：棋盘 ============ */
+  #board-area { flex: 1; position: relative; min-height: 0; background: #0e2a1c; }
   #scene-container { position: absolute; inset: 0; }
-
-  /* ================= HUD ================= */
-  #hud { position: absolute; inset: 0; pointer-events: none; }
-  #hud > * { pointer-events: auto; }
-
   #title-tag {
-    position: absolute; top: 14px; left: 14px;
+    position: absolute; top: 10px; left: 10px; z-index: 5;
     background: var(--glass); border: 1px solid var(--glass-brd);
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    border-radius: 14px; padding: 9px 18px;
+    border-radius: 12px; padding: 6px 14px;
     color: var(--gold-hi); font-family: "Noto Serif SC", serif; font-weight: 900;
-    font-size: 16px; letter-spacing: 1px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    font-size: 13px; letter-spacing: 1px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35);
   }
-  #title-tag small {
-    font-weight: 500; color: rgba(247,241,227,.55); margin-left: 8px;
-    font-family: "Noto Sans SC", sans-serif; letter-spacing: 0;
-  }
-
   #turn-banner {
-    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
     background: linear-gradient(135deg, #e9c25a, #c99a2e);
-    color: #241a05; font-weight: 700; padding: 9px 26px; border-radius: 999px;
-    box-shadow: 0 6px 22px rgba(212,175,55,.35), inset 0 1px 0 rgba(255,255,255,.5);
-    font-size: 16px; white-space: nowrap;
+    color: #241a05; font-weight: 700; padding: 6px 18px; border-radius: 999px;
+    box-shadow: 0 4px 18px rgba(212,175,55,.35), inset 0 1px 0 rgba(255,255,255,.5);
+    font-size: 13px; white-space: nowrap;
     border: 1px solid rgba(255,235,170,.65);
+    max-width: 60vw; overflow: hidden; text-overflow: ellipsis;
   }
 
-  /* 玩家徽章（玻璃胶囊） */
+  /* ============ 下屏：操作板 ============ */
+  #panel {
+    height: 42vh; min-height: 310px; max-height: 480px;
+    background:
+      linear-gradient(150deg, rgba(212,175,55,.10), rgba(0,0,0,0) 40%),
+      var(--paper);
+    border-top: 2px solid var(--gold);
+    box-shadow: 0 -8px 30px rgba(0,0,0,.45);
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
   #players {
-    position: absolute; top: 62px; right: 14px;
-    display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px;
+    justify-content: center; flex: 0 0 auto;
   }
   .chip {
-    background: var(--glass); border: 1px solid var(--glass-brd);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    border-radius: 999px; padding: 5px 13px;
-    font-size: 12px; font-weight: 700; color: var(--cream);
-    box-shadow: 0 4px 14px rgba(0,0,0,.3);
+    background: #fff; border: 1.5px solid #e2d8ba;
+    border-radius: 999px; padding: 4px 12px;
+    font-size: 12px; font-weight: 700; color: var(--ink);
+    box-shadow: 0 2px 8px rgba(90,70,20,.10);
     display: flex; align-items: center; gap: 6px;
     cursor: pointer; user-select: none;
     transition: transform .15s, border-color .15s;
   }
-  .chip:hover { transform: scale(1.06); border-color: var(--gold-hi); }
-  .chip.current { border-color: var(--gold-hi); background: rgba(70, 58, 14, .6); box-shadow: 0 0 0 1px var(--gold-hi), 0 4px 16px rgba(212,175,55,.35); }
+  .chip:hover { transform: scale(1.05); border-color: var(--gold); }
+  .chip.current { border-color: var(--gold); background: linear-gradient(160deg, #fdf6df, #f7e9bd); color: #8a6a10; box-shadow: 0 3px 10px rgba(212,175,55,.3); }
   .chip.dead { opacity: .4; filter: grayscale(1); }
-  .chip .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
 
-  /* 日志：底部单行玻璃条 */
-  #log {
-    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    max-width: min(680px, 86vw); height: 0; overflow: hidden; opacity: 0;
-    background: rgba(14, 26, 18, .82);
-    border: 1px solid rgba(242,201,76,.18);
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    color: #f3ecd8; border-radius: 999px;
-    padding: 0 18px; font-size: 12.5px; line-height: 27px; white-space: nowrap;
-    text-overflow: ellipsis; pointer-events: none; transition: opacity .25s;
-    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+  #action-area { flex: 1; display: flex; gap: 10px; min-height: 0; }
+
+  /* 当前格子操作卡 */
+  #tile-card {
+    flex: 1.25; background: #fff; border: 1.5px solid #e2d8ba; border-radius: 14px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+    box-shadow: 0 3px 12px rgba(90,70,20,.08); min-height: 0; overflow-y: auto;
   }
-  #log.show { height: 27px; opacity: 1; }
-  #log.l-card { background: rgba(94, 66, 8, .9); }
-  #log.l-bad  { background: rgba(120, 36, 26, .9); }
-  #log.l-good { background: rgba(22, 84, 48, .9); }
-  #log.l-sys  { background: rgba(52, 52, 48, .85); }
-
-  /* 领地操作提示条 */
-  #tile-hint {
-    position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%);
-    background: rgba(251, 247, 236, .97); color: var(--ink);
-    border: 1.5px solid var(--gold);
-    border-radius: 999px; padding: 7px 20px; font-size: 13px; font-weight: 700;
-    box-shadow: 0 8px 24px rgba(0,0,0,.35);
-    display: none; white-space: nowrap;
-    max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
-  }
-  #tile-hint b { color: var(--gold-deep); }
-
-  /* 掷骰按钮：金色主按钮 */
-  #roll-btn {
-    position: absolute; right: 22px; bottom: 22px;
-    background: linear-gradient(160deg, #f2c94c 0%, #d4af37 55%, #a8842a 100%);
-    color: #241a05; font-size: 18px; font-weight: 900; border: none;
-    padding: 13px 36px; border-radius: 999px; cursor: pointer;
-    box-shadow: 0 8px 26px rgba(212,175,55,.45), inset 0 1.5px 0 rgba(255,255,255,.55);
-    border: 1px solid rgba(255,240,190,.7);
-    display: none; font-family: "Noto Sans SC", sans-serif; letter-spacing: 2px;
+  #tile-card .tc-empty { color: #b3a37f; font-size: 12.5px; text-align: center; margin: auto; line-height: 1.7; }
+  #tile-card .tc-title { font-family: "Noto Serif SC", serif; font-weight: 900; font-size: 15px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+  #tile-card .tc-title .reg { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; color: #fff; }
+  #tile-card .tc-body { font-size: 12px; color: #5a4d35; line-height: 1.65; white-space: pre-line; }
+  #tile-card .tc-body b { color: #8a6a10; }
+  #tile-card .tc-btns { display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap; }
+  #tile-card .tc-btns button {
+    flex: 1; min-width: 100px; border: 1px solid rgba(255,240,190,.7); border-radius: 999px;
+    padding: 9px 12px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+    color: #241a05; background: linear-gradient(160deg, #f2c94c, #c99a2e);
+    box-shadow: 0 3px 10px rgba(212,175,55,.35), inset 0 1px 0 rgba(255,255,255,.5);
     transition: transform .12s, filter .12s;
   }
-  #roll-btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
-  #roll-btn:active { transform: translateY(1px); }
-  #roll-btn:disabled { filter: grayscale(.7); cursor: not-allowed; transform: none; }
-  #dice-result {
-    position: absolute; right: 36px; bottom: 84px;
-    font-size: 27px; font-weight: 900; color: var(--gold-hi);
-    text-shadow: 0 2px 10px rgba(0,0,0,.6);
-    display: none;
-  }
+  #tile-card .tc-btns button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+  #tile-card .tc-btns button.tc-secondary { background: #ece3ca; color: #6b5d43; border-color: #d8cdae; box-shadow: none; }
+  #tile-card .tc-btns button:disabled { filter: grayscale(.7); cursor: not-allowed; transform: none; }
 
-  /* ================= 弹窗（纸质卡片 + 金饰边） ================= */
+  /* 日志区 */
+  #log-box {
+    flex: 1; min-height: 0; overflow-y: auto;
+    background: linear-gradient(170deg, #143024, #0c221a);
+    border: 1px solid rgba(242,201,76,.22);
+    border-radius: 14px; padding: 8px 11px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  #log-box .ln { font-size: 11px; line-height: 1.5; color: #d8d0b4; }
+  #log-box .ln.l-card { color: #f2c94c; }
+  #log-box .ln.l-bad { color: #ff9b8a; }
+  #log-box .ln.l-good { color: #8fd6a4; }
+  #log-box .ln.l-sys { color: #a8b0a4; }
+
+  /* 掷骰列 */
+  #roll-col { flex: 0 0 108px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  #roll-btn {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #f7dd8a, #d4af37 58%, #a8842a);
+    color: #241a05; font-size: 15px; font-weight: 900; border: none; cursor: pointer;
+    font-family: inherit; letter-spacing: 1px; line-height: 1.4;
+    box-shadow: 0 8px 24px rgba(212,175,55,.45), inset 0 2px 0 rgba(255,255,255,.55), inset 0 -4px 10px rgba(120,90,20,.35);
+    border: 2px solid rgba(255,240,190,.8);
+    display: none; transition: transform .12s, filter .12s;
+  }
+  #roll-btn:hover { filter: brightness(1.06); }
+  #roll-btn:active { transform: scale(.95); }
+  #roll-btn:disabled { filter: grayscale(.7); cursor: not-allowed; }
+  #dice-result { font-size: 24px; font-weight: 900; color: var(--gold-deep); display: none; }
+
+  /* ============ 弹窗 ============ */
   #modal-mask {
-    position: absolute; inset: 0; background: rgba(6, 16, 10, .55);
+    position: fixed; inset: 0; background: rgba(6, 16, 10, .55);
     backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     display: none; align-items: center; justify-content: center; z-index: 50;
   }
@@ -139,21 +146,21 @@
       var(--paper);
     border: 1px solid rgba(212,175,55,.5);
     outline: 4px solid rgba(212,175,55,.12);
-    border-radius: 20px; padding: 24px 28px;
-    width: 380px; max-width: 92vw;
+    border-radius: 20px; padding: 22px 24px;
+    width: 380px; max-width: 92vw; max-height: 86vh; overflow-y: auto;
     box-shadow: 0 24px 70px rgba(0,0,0,.5);
     text-align: center; animation: pop .22s ease-out;
   }
   @keyframes pop { from { transform: scale(.86) translateY(10px); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   #modal h3 {
     font-family: "Noto Serif SC", serif; font-weight: 900;
-    color: var(--ink); margin-bottom: 12px; font-size: 19px;
+    color: var(--ink); margin-bottom: 12px; font-size: 18px;
     padding-bottom: 10px; border-bottom: 1px solid rgba(212,175,55,.35);
   }
-  #modal .m-body { color: #5a4d35; font-size: 14px; line-height: 1.75; margin-bottom: 18px; white-space: pre-line; }
+  #modal .m-body { color: #5a4d35; font-size: 13.5px; line-height: 1.75; margin-bottom: 18px; white-space: pre-line; text-align: left; }
   #modal .m-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   #modal button {
-    border: 1px solid rgba(255,240,190,.7); border-radius: 999px; padding: 10px 28px; font-size: 15px;
+    border: 1px solid rgba(255,240,190,.7); border-radius: 999px; padding: 10px 26px; font-size: 15px;
     font-weight: 700; cursor: pointer; color: #241a05; font-family: inherit;
     background: linear-gradient(160deg, #f2c94c, #c99a2e);
     box-shadow: 0 4px 14px rgba(212,175,55,.4), inset 0 1px 0 rgba(255,255,255,.5);
@@ -164,46 +171,46 @@
   #modal .card-face {
     background: linear-gradient(160deg, #fffdf6, #f7ecd2);
     border: 1.5px solid var(--gold); border-radius: 14px;
-    padding: 18px; margin-bottom: 16px;
+    padding: 16px; margin-bottom: 16px;
     box-shadow: inset 0 0 30px rgba(212,175,55,.12);
   }
-  #modal .card-face .c-name { font-family: "Noto Serif SC", serif; font-size: 21px; font-weight: 900; color: #8a6a10; margin-bottom: 7px; }
+  #modal .card-face .c-name { font-family: "Noto Serif SC", serif; font-size: 20px; font-weight: 900; color: #8a6a10; margin-bottom: 7px; }
   #modal .card-face .c-rarity { font-size: 11px; border-radius: 6px; padding: 2px 9px; display: inline-block; margin-bottom: 9px; }
   #modal .card-face .c-desc { font-size: 13px; color: #5a4d35; }
 
-  /* 摊牌选卡（蜂巢） */
+  /* 摊牌选卡 */
   #modal .pick-sub { color: #8a7a58; font-size: 12.5px; margin-bottom: 14px; }
-  #modal .pick-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 6px; }
+  #modal .pick-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 6px; flex-wrap: wrap; }
   #modal .pick-card { cursor: pointer; transition: transform .15s; }
   #modal .pick-card:hover { transform: translateY(-6px); }
   #modal .pick-card.dim { opacity: .35; transform: scale(.94); pointer-events: none; }
   #modal .pick-card.picked { transform: translateY(-6px); }
   #modal .pick-back {
-    width: 104px; height: 148px; border-radius: 12px;
+    width: 96px; height: 138px; border-radius: 12px;
     background:
       radial-gradient(circle at 30% 25%, rgba(255,255,255,.25), rgba(0,0,0,0) 55%),
       repeating-linear-gradient(45deg, #8a6a10 0 7px, #6e5409 7px 14px);
     border: 2px solid var(--gold); box-shadow: 0 8px 20px rgba(0,0,0,.35), inset 0 0 0 4px rgba(251,247,236,.9), inset 0 0 0 5px rgba(212,175,55,.6);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-    font-size: 30px; color: rgba(251,247,236,.9);
+    font-size: 28px; color: rgba(251,247,236,.9);
   }
   #modal .pick-back span {
-    font-family: "Noto Serif SC", serif; font-size: 20px; font-weight: 900; color: var(--gold-hi);
+    font-family: "Noto Serif SC", serif; font-size: 19px; font-weight: 900; color: var(--gold-hi);
     text-shadow: 0 1px 3px rgba(0,0,0,.5);
   }
   #modal .pick-front {
-    width: 118px; height: 160px; border-radius: 12px;
+    width: 110px; height: 150px; border-radius: 12px;
     background: linear-gradient(165deg, #fffdf6, #f4e8ca);
     border: 2px solid var(--gold); box-shadow: 0 10px 26px rgba(0,0,0,.4);
     padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; overflow: hidden;
   }
   #modal .pick-front .c-rarity { font-size: 10px; border-radius: 5px; padding: 1px 6px; }
-  #modal .pick-front .c-name { font-family: "Noto Serif SC", serif; font-size: 14.5px; font-weight: 900; color: #8a6a10; }
+  #modal .pick-front .c-name { font-family: "Noto Serif SC", serif; font-size: 14px; font-weight: 900; color: #8a6a10; }
   #modal .pick-front .c-desc { font-size: 10.5px; color: #6b5d43; line-height: 1.5; }
 
-  /* ================= 开局设置（深林金宴） ================= */
+  /* ============ 开局设置 ============ */
   #setup {
-    position: absolute; inset: 0; z-index: 100;
+    position: fixed; inset: 0; z-index: 100;
     background:
       radial-gradient(ellipse at 20% 0%, rgba(242,201,76,.14), rgba(0,0,0,0) 55%),
       radial-gradient(ellipse at 85% 100%, rgba(242,201,76,.08), rgba(0,0,0,0) 50%),
@@ -214,24 +221,24 @@
     background: rgba(251, 247, 236, .97);
     border: 1px solid rgba(212,175,55,.55);
     outline: 6px solid rgba(212,175,55,.10);
-    border-radius: 24px; padding: 30px 38px;
+    border-radius: 24px; padding: 26px 30px;
     box-shadow: 0 30px 90px rgba(0,0,0,.55);
     text-align: center;
     max-width: 920px; width: min(94vw, 920px);
-    display: grid; grid-template-columns: 1fr 1.15fr; gap: 10px 38px; align-items: start;
+    display: grid; grid-template-columns: 1fr 1.15fr; gap: 10px 34px; align-items: start;
   }
   #setup .left-col { display: flex; flex-direction: column; align-items: center; }
   #setup .right-col { display: flex; flex-direction: column; align-items: center; }
   #setup h1 {
     font-family: "Noto Serif SC", serif; font-weight: 900;
-    font-size: 34px; margin-bottom: 4px;
+    font-size: 30px; margin-bottom: 4px;
     background: linear-gradient(160deg, #a8842a, #e9c25a 45%, #8a6a10);
     -webkit-background-clip: text; background-clip: text; color: transparent;
     letter-spacing: 3px;
   }
-  #setup .sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 8px; line-height: 1.6; }
+  #setup .sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 6px; line-height: 1.6; }
   #setup .sec-title {
-    color: var(--gold-deep); font-weight: 700; margin: 14px 0 9px; font-size: 14.5px;
+    color: var(--gold-deep); font-weight: 700; margin: 13px 0 8px; font-size: 14px;
     display: flex; align-items: center; gap: 8px;
   }
   #setup .sec-title::before, #setup .sec-title::after {
@@ -240,7 +247,7 @@
   #setup .sec-title::after { transform: scaleX(-1); }
   #setup .count-btns button {
     border: 1.5px solid #ddd2b4; background: #fff; color: var(--ink);
-    border-radius: 12px; padding: 8px 24px; margin: 0 5px; font-size: 15px; cursor: pointer;
+    border-radius: 12px; padding: 8px 22px; margin: 0 5px; font-size: 15px; cursor: pointer;
     font-weight: 700; font-family: inherit; transition: all .15s;
     box-shadow: 0 2px 8px rgba(90,70,20,.08);
   }
@@ -249,10 +256,10 @@
     border-color: var(--gold); background: linear-gradient(160deg, #fdf6df, #f7e9bd); color: #8a6a10;
     box-shadow: 0 3px 12px rgba(212,175,55,.25);
   }
-  #setup .bears { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #setup .bears { display: flex; gap: 9px; flex-wrap: wrap; justify-content: center; }
   #setup .bear {
-    width: 96px; background: #fff; border: 1.5px solid #e2d8ba; border-radius: 16px;
-    padding: 12px 6px 10px; cursor: pointer; transition: all .15s;
+    width: 90px; background: #fff; border: 1.5px solid #e2d8ba; border-radius: 16px;
+    padding: 11px 6px 9px; cursor: pointer; transition: all .15s;
     box-shadow: 0 3px 12px rgba(90,70,20,.08);
   }
   #setup .bear:hover { transform: translateY(-4px); border-color: var(--gold); }
@@ -261,23 +268,23 @@
     transform: translateY(-4px); box-shadow: 0 8px 22px rgba(212,175,55,.3);
   }
   #setup .bear .swatch {
-    width: 36px; height: 36px; border-radius: 50%; margin: 0 auto 7px;
+    width: 34px; height: 34px; border-radius: 50%; margin: 0 auto 6px;
     border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.28), inset 0 -3px 6px rgba(0,0,0,.15);
   }
-  #setup .bear .b-name { font-family: "Noto Serif SC", serif; font-weight: 900; color: var(--ink); font-size: 14.5px; }
+  #setup .bear .b-name { font-family: "Noto Serif SC", serif; font-weight: 900; color: var(--ink); font-size: 14px; }
   #setup .bear .b-trait { font-size: 10px; color: var(--ink-soft); margin-top: 4px; line-height: 1.45; }
   #setup #start-btn {
-    margin-top: 26px; border: 1px solid rgba(255,240,190,.8);
+    margin-top: 24px; border: 1px solid rgba(255,240,190,.8);
     background: linear-gradient(160deg, #f2c94c 0%, #d4af37 55%, #a8842a 100%);
-    color: #241a05; font-size: 19px; font-weight: 900; padding: 14px 58px; border-radius: 999px;
+    color: #241a05; font-size: 18px; font-weight: 900; padding: 13px 54px; border-radius: 999px;
     cursor: pointer; font-family: inherit; letter-spacing: 4px;
     box-shadow: 0 10px 30px rgba(212,175,55,.45), inset 0 1.5px 0 rgba(255,255,255,.55);
     transition: transform .12s, filter .12s;
   }
   #setup #start-btn:hover { transform: translateY(-2px); filter: brightness(1.06); }
-  #setup .tip { font-size: 11px; color: #a39471; margin-top: 14px; grid-column: 1 / -1; }
+  #setup .tip { font-size: 11px; color: #a39471; margin-top: 13px; grid-column: 1 / -1; }
 
-  /* 窄屏 / 手机竖屏：保持双栏横排，整体紧凑缩放 */
+  /* 窄屏：保持双栏横排紧凑 */
   @media (max-width: 760px), (orientation: portrait) {
     #setup .box { padding: 16px 18px; gap: 6px 16px; border-radius: 18px; }
     #setup h1 { font-size: 21px; letter-spacing: 1px; }
@@ -290,48 +297,39 @@
     #setup .bear .b-trait { font-size: 9px; }
     #setup #start-btn { font-size: 15px; padding: 10px 38px; margin-top: 14px; letter-spacing: 2px; }
     #setup .tip { font-size: 10px; }
-
-    #title-tag { font-size: 12px; padding: 5px 11px; top: 8px; left: 8px; }
-    #title-tag small { display: none; }
-    #turn-banner { font-size: 13px; padding: 6px 15px; top: 8px; max-width: 52vw; white-space: normal; text-align: center; }
-    #players { top: 48px; right: 8px; gap: 4px; }
-    .chip { font-size: 11px; padding: 4px 10px; }
-    #log { max-width: 84vw; font-size: 11px; line-height: 23px; bottom: 9px; }
-    #log.show { height: 23px; }
-    #tile-hint { font-size: 11px; padding: 5px 13px; bottom: 42px; }
-    #roll-btn { font-size: 14px; padding: 10px 22px; right: 12px; bottom: 12px; letter-spacing: 1px; }
-    #dice-result { right: 22px; bottom: 58px; font-size: 20px; }
-    #modal { padding: 16px 16px; }
-    #modal h3 { font-size: 16px; }
-    #modal .m-body { font-size: 13px; }
-    #modal .card-face .c-name { font-size: 17px; }
-    #modal .pick-back { width: 86px; height: 124px; font-size: 24px; }
-    #modal .pick-front { width: 96px; height: 138px; }
   }
   #rotate-tip { display: none; }
-  @media (orientation: portrait) and (max-width: 600px) {
+  @media (orientation: landscape) and (max-height: 500px) {
     #rotate-tip {
-      display: block; margin: 10px auto 0; max-width: 300px;
+      display: block; margin: 8px auto 0; max-width: 300px;
       background: #f7ecd0; border: 1.5px solid var(--gold); border-radius: 12px;
-      padding: 8px 12px; color: #8a6a10; font-size: 12px; font-weight: 700;
+      padding: 6px 10px; color: #8a6a10; font-size: 11px; font-weight: 700;
       grid-column: 1 / -1;
     }
   }
 </style>
 </head>
 <body>
-  <div id="scene-container"></div>
-
-  <div id="hud">
-    <div id="title-tag">蜜熊岛大富翁<small>v0.9 · 2D 横屏</small></div>
-    <div id="turn-banner">…</div>
-    <div id="players"></div>
-    <div id="log"></div>
-    <div id="tile-hint"></div>
-    <div id="dice-result"></div>
-    <button id="roll-btn">掷 骰 子</button>
-    <div id="modal-mask"><div id="modal"></div></div>
+  <div id="app">
+    <div id="board-area">
+      <div id="scene-container"></div>
+      <div id="title-tag">蜜熊岛大富翁<small style="font-weight:500;color:rgba(247,241,227,.55);margin-left:6px;font-family:'Noto Sans SC',sans-serif;letter-spacing:0">v1.0</small></div>
+      <div id="turn-banner">…</div>
+    </div>
+    <div id="panel">
+      <div id="players"></div>
+      <div id="action-area">
+        <div id="tile-card"><div class="tc-empty">棋盘上点击任意格子可查看详情<br>轮到你时，操作会出现在这里</div></div>
+        <div id="log-box"></div>
+        <div id="roll-col">
+          <div id="dice-result"></div>
+          <button id="roll-btn">掷<br>骰<br>子</button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <div id="modal-mask"><div id="modal"></div></div>
 
   <div id="setup">
     <div class="box">
@@ -355,8 +353,8 @@
         <div class="sec-title">选择你的熊熊角色</div>
         <div class="bears" id="bear-pick"></div>
       </div>
-      <div id="rotate-tip">📱 建议横屏游玩：转动手机体验更佳</div>
-      <div class="tip">操作：拖动平移 · 滚轮缩放 · 踩到产业格后点击格子购买 / 升级 · 踩到蜂巢可亲手摊牌选卡 · 纯 2D 渲染，低配设备流畅运行</div>
+      <div id="rotate-tip">📱 建议竖屏游玩：上面看棋盘，下面做操作</div>
+      <div class="tip">竖屏双区设计 · 上屏棋盘（拖动平移/缩放/点格子看详情）· 下屏操作板（掷骰 / 买地 / 升级 / 付租 / 日志）</div>
     </div>
   </div>
 
