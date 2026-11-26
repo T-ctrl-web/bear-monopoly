@@ -103,23 +103,19 @@ let humanChar = CHARS[0];
 
 /* ---------------- DOM 引用 ---------------- */
 const $ = id => document.getElementById(id);
-const turnBanner = $("turn-banner"), playersEl = $("players"), logEl = $("log"),
+const turnBanner = $("turn-banner"), playersEl = $("players"), logEl = $("log-box"),
+      tileCardEl = $("tile-card"),
       rollBtn = $("roll-btn"), diceEl = $("dice-result"), mask = $("modal-mask"), modal = $("modal");
 
-/* 日志改为单行滚动条（v0.6：不再用大方块挡视野） */
-let logTimer = null;
-function clearLog() {
-  logEl.innerHTML = "";
-  logEl.classList.remove("show", "l-bad", "l-good", "l-card", "l-sys");
-}
+/* 日志：操作板内的滚动日志区（v1.0） */
+function clearLog() { logEl.innerHTML = ""; }
 function log(msg, cls) {
-  // 永久性提示（规则说明等）走 l-sys 时不刷新计时器也可以，统一处理
-  logEl.textContent = msg;
-  logEl.className = "show" + (cls ? " " + cls : "");
-  clearTimeout(logTimer);
-  logTimer = setTimeout(() => {
-    if (!logEl.classList.contains("keep")) logEl.classList.remove("show");
-  }, 600);
+  const d = document.createElement("div");
+  d.className = "ln" + (cls ? " " + cls : "");
+  d.textContent = msg;
+  logEl.appendChild(d);
+  while (logEl.children.length > 40) logEl.removeChild(logEl.children[0]);
+  logEl.scrollTop = logEl.scrollHeight;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -161,16 +157,16 @@ let canvas, ctx, DPR = 1;
 let viewScale = 1, viewOX = 0, viewOY = 0, fitScale = 1;
 let dirty = true;                 // 脏标记：仅在需要时重绘
 const bears = {};                 // playerId -> {px, py}（棋盘逻辑坐标）
-const TILE = 72;                  // 1 格逻辑边长
+const TILE = 104;                 // 1 格逻辑边长（v1.0 竖屏放大）
 let decoTrees = [];               // 中央装饰（初始化时固定）
 let marginBushes = [], marginFlies = [];  // 棋盘外围装饰（v0.9b）
 
-// 32 格 -> 10x8 方环网格坐标（v0.5 修复：左列原公式与左下角重叠且漏一格，导致首尾断开）
+// 32 格 -> 8x10 竖版方环网格坐标（v1.0：横向 8 格、纵向 10 格，上下两屏布局）
 function tileGrid(pos) {
-  if (pos <= 9)        return { x: -4.5 + pos,       z: -3.5 };
-  if (pos <= 15)       return { x: 4.5,              z: -2.5 + (pos - 10) };
-  if (pos <= 25)       return { x: 4.5 - (pos - 16), z: 3.5 };
-  return { x: -4.5, z: 2.5 - (pos - 26) };   // 26→2.5 … 31→-2.5，首尾与起点格相接
+  if (pos <= 9)        return { x: -3.5,              z: -4.5 + pos };
+  if (pos <= 15)       return { x: -2.5 + (pos - 10), z: 4.5 };
+  if (pos <= 25)       return { x: 3.5,               z: 4.5 - (pos - 16) };
+  return { x: 2.5 - (pos - 26), z: -4.5 };   // 26→2.5 … 31→-2.5，首尾与起点格相接
 }
 // 网格 -> 棋盘逻辑像素（棋盘中心为原点）
 function tilePx(pos) {
@@ -200,9 +196,9 @@ function initScene() {
   let seed2 = 20261126;
   const rnd2 = () => (seed2 = (seed2 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
   for (let i = 0; i < 90; i++) {
-    const tx = (rnd2() - 0.5) * 22, tz = (rnd2() - 0.5) * 15;
-    // 只保留棋盘底板之外的区域
-    if (Math.abs(tx) < 6.2 && Math.abs(tz) < 5.0) continue;
+    const tx = (rnd2() - 0.5) * 20, tz = (rnd2() - 0.5) * 22;
+    // 只保留竖版棋盘底板（8.7×10.7 格）之外的区域
+    if (Math.abs(tx) < 5.4 && Math.abs(tz) < 6.4) continue;
     if (rnd2() < 0.62) {
       marginBushes.push({
         x: tx, z: tz, s: 0.55 + rnd2() * 0.85,
@@ -215,10 +211,13 @@ function initScene() {
 
   const resize = () => {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(innerWidth * DPR);
-    canvas.height = Math.round(innerHeight * DPR);
-    // 棋盘 10×8 格：约 720×576，加边距适配横屏
-    fitScale = Math.min(innerWidth / 820, innerHeight / 640);
+    const area = document.getElementById("board-area");
+    const w = area ? area.clientWidth : innerWidth;
+    const h = area ? area.clientHeight : innerHeight;
+    canvas.width = Math.round(w * DPR);
+    canvas.height = Math.round(h * DPR);
+    // 竖版棋盘 8×10 格：约 832×1040，适配上屏区域
+    fitScale = Math.min(w / (8 * TILE + 70), h / (10 * TILE + 70));
     dirty = true;
   };
   addEventListener("resize", resize);
@@ -255,32 +254,32 @@ function initScene() {
   })();
 }
 
-/* 屏幕坐标 -> 棋盘逻辑坐标 */
+/* 屏幕坐标 -> 棋盘逻辑坐标（以上屏区域为基准） */
 function screenToBoard(clientX, clientY) {
+  const area = document.getElementById("board-area");
+  const r = area.getBoundingClientRect();
   const s = viewScale * fitScale;
   return {
-    px: (clientX - innerWidth / 2) / s - viewOX,
-    py: (clientY - innerHeight / 2) / s - viewOY,
+    px: (clientX - r.left - r.width / 2) / s - viewOX,
+    py: (clientY - r.top - r.height / 2) / s - viewOY,
   };
 }
 
-/* 点击命中：优先 "没走到的无主领地格"（手动触发结算），其次领地详情，最后卡牌区 */
-let pendingTile = null;   // 真人停留已结算过的格子，点击可再看/操作
+/* 点击命中：卡牌区看卡池；格子只看详情（v1.0：所有操作移到下屏操作板） */
+/* 点击命中：卡牌区看卡池；格子只看详情（v1.0：所有操作移到下屏操作板） */
 function handleCanvasClick(clientX, clientY) {
   if (!running || !canvas) return;
   const { px, py } = screenToBoard(clientX, clientY);
   const half = TILE / 2;
 
   // 卡牌区点击 -> 看卡池
-  if (Math.abs(px - (-1.62 * TILE)) < TILE * 0.9 && Math.abs(py + 0.55 * TILE) < TILE * 0.58) return showCardPool("destiny");
-  if (Math.abs(px - (1.62 * TILE)) < TILE * 0.9 && Math.abs(py + 0.55 * TILE) < TILE * 0.58) return showCardPool("chance");
+  if (Math.abs(px - (-1.1 * TILE)) < TILE * 0.95 && Math.abs(py + 1.75 * TILE) < TILE * 0.6) return showCardPool("destiny");
+  if (Math.abs(px - (1.1 * TILE)) < TILE * 0.95 && Math.abs(py + 1.75 * TILE) < TILE * 0.6) return showCardPool("chance");
 
   // 格子命中
   for (const t of tiles) {
     const p = tilePx(t.pos);
     if (Math.abs(px - p.px) <= half && Math.abs(py - p.py) <= half) {
-      const human = players.find(x => x.isHuman && x.alive);
-      if (pendingTile === t && human && human.pos === t.pos) return manualResolve(t);
       return showTileInfo(t);
     }
   }
@@ -385,33 +384,34 @@ function render() {
     ctx.beginPath(); ctx.arc(fx, fy, f.r, 0, Math.PI * 2); ctx.fill();
   });
 
-  // 米色绒面棋盘底板（带投影 + 金线内框）
+  // 米色绒面棋盘底板（竖版 8.7×10.7 格，带投影 + 金线内框）
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 34; ctx.shadowOffsetY = 14;
-  roundRect(-5.35 * TILE, -4.35 * TILE, 10.7 * TILE, 8.7 * TILE, 26);
-  const bp = ctx.createLinearGradient(0, -4.35 * TILE, 0, 4.35 * TILE);
+  roundRect(-4.35 * TILE, -5.35 * TILE, 8.7 * TILE, 10.7 * TILE, 26);
+  const bp = ctx.createLinearGradient(0, -5.35 * TILE, 0, 5.35 * TILE);
   bp.addColorStop(0, "#f9f3e2");
   bp.addColorStop(1, "#eee1c2");
   ctx.fillStyle = bp; ctx.fill();
   ctx.restore();
-  roundRect(-5.35 * TILE, -4.35 * TILE, 10.7 * TILE, 8.7 * TILE, 26);
+  roundRect(-4.35 * TILE, -5.35 * TILE, 8.7 * TILE, 10.7 * TILE, 26);
   ctx.strokeStyle = "rgba(212,175,55,.65)"; ctx.lineWidth = 2.5; ctx.stroke();
-  roundRect(-5.18 * TILE, -4.18 * TILE, 10.36 * TILE, 8.36 * TILE, 20);
+  roundRect(-4.18 * TILE, -5.18 * TILE, 8.36 * TILE, 10.36 * TILE, 20);
   ctx.strokeStyle = "rgba(212,175,55,.22)"; ctx.lineWidth = 1.2; ctx.stroke();
 
   // 中央场地：两个卡牌区（命运 / 机会）
-  drawCardZone(-1.62 * TILE, -0.55 * TILE, "🎴 命运", "#8a7fb8", "好事坏事，天注定");
-  drawCardZone(1.62 * TILE, -0.55 * TILE, "🃏 机会", "#f0a63c", "下一次，轮到你运气");
+  drawCardZone(-1.1 * TILE, -1.75 * TILE, "🎴 命运", "#8a7fb8", "好事坏事，天注定");
+  drawCardZone(1.1 * TILE, -1.75 * TILE, "🃏 机会", "#f0a63c", "下一次，轮到你运气");
 
   // 中央蜜金树 + 赛事横幅（金字）
-  ctx.font = `${TILE * 0.72}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("🌳", 0, -2.35 * TILE);
-  ctx.font = `900 ${TILE * 0.24}px "Noto Serif SC", "Microsoft YaHei", serif`;
+  ctx.font = `${TILE * 0.66}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🌳", 0, 0.55 * TILE);
+  ctx.font = `900 ${TILE * 0.22}px "Noto Serif SC", "Microsoft YaHei", serif`;
   ctx.fillStyle = "#9a7b1e";
-  ctx.fillText("蜜 熊 岛 大 富 翁", 0, -1.35 * TILE);
-  ctx.font = `500 ${TILE * 0.13}px "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+  ctx.fillText("蜜 熊 岛", 0, 1.85 * TILE);
+  ctx.fillText("大 富 翁", 0, 2.35 * TILE);
+  ctx.font = `500 ${TILE * 0.12}px "Noto Sans SC", "Microsoft YaHei", sans-serif`;
   ctx.fillStyle = "#a5926a";
-  ctx.fillText("年度财富之争 · 淘汰制", 0, -1.02 * TILE);
+  ctx.fillText("年度财富之争", 0, 2.95 * TILE);
 
   // 棋盘格
   tiles.forEach(t => drawTile(t, tilePx(t.pos)));
@@ -839,67 +839,129 @@ async function movePlayer(p, steps, backward) {
 }
 
 /* ---------------- 落格结算 ----------------
- * v0.6b：领地不自动弹窗。真人回合在此挂起，等玩家点击该格后再继续
- * （修复：原实现不阻塞，AI 回合会清掉 pendingTile 导致点击无效）
+ * v1.0：真人落格后操作出现在下屏操作板（#tile-card），不再依赖点击棋盘
  */
-let humanTileResolve = null;   // 挂起回合的恢复函数
+let panelPending = null;   // { tile, act } 供操作板按钮 / 冒烟测试调用
 
 async function resolveTile(p) {
   if (!p.alive || !running) return;
-  pendingTile = null;
   const t = tiles[p.pos];
   if (t.type === "land") {
-    if (p.isHuman) {
-      showTilePrompt(t, p);
-      await new Promise(res => { humanTileResolve = res; pendingTile = t; });
-      return;
-    }
+    if (p.isHuman) { await panelTileAction(p, t); return; }
     await resolveLand(p, t);
   } else if (t.type === "nest") await nestFlow(p, t);
   else if (t.type === "jar") await jarFlow(p);
-  else if (t.type === "path") { log(`🌿 ${p.name} 在花田小径散了个步`); await sleep(600); }
+  else if (t.type === "path") {
+    log(`🌿 ${p.name} 在花田小径散了个步`, "l-sys");
+    showTileCard(t, null, null);
+    await sleep(600);
+  }
 }
 
-/* 领地高亮提示条 */
-function showTilePrompt(t, p) {
-  const act = !t.owner ? `点击格子买下（$ ${buyPrice(t, p)}）`
-    : t.owner === p ? (t.level >= CFG.MAX_LEVEL ? "已满级" : `点击格子升级（$ ${upgradeCost(t, p)}）`)
-    : `业主 ${t.owner.name} · 过路费 ${computeRent(t)}`;
-  const bar = $("tile-hint");
-  bar.innerHTML = `📍 <b>${t.name}</b> · ${act}`;
-  bar.style.display = "block";
+/* 操作板：显示当前格信息与操作按钮 */
+function showTileCard(t, body, buttons) {
+  const regColor = t.type === "land" ? css(REGION_COLOR[t.region]) : "#9a7b1e";
+  let html = `<div class="tc-title"><span class="reg" style="background:${regColor}">${t.type === "land" ? t.region : { start: "起点", nest: "蜂巢", jar: "糖罐", path: "小径" }[t.type] || ""}</span>${t.name}</div>`;
+  html += body ? `<div class="tc-body">${body}</div>` : "";
+  if (buttons && buttons.length) {
+    html += `<div class="tc-btns">` + buttons.map((b, i) =>
+      `<button data-i="${i}" class="${b.secondary ? "tc-secondary" : ""}" ${b.disabled ? "disabled" : ""}>${b.label}</button>`).join("") + `</div>`;
+  }
+  tileCardEl.innerHTML = html;
+  if (buttons) {
+    tileCardEl.querySelectorAll("button").forEach(btn => {
+      btn.onclick = () => buttons[+btn.dataset.i].onClick();
+    });
+  }
   invalidate();
 }
-function hideTilePrompt() {
-  const bar = $("tile-hint");
-  if (bar) bar.style.display = "none";
+function clearTileCard(msg) {
+  tileCardEl.innerHTML = `<div class="tc-empty">${msg || "轮到别的熊熊行动了…"}</div>`;
 }
 
-/* 玩家点击停驻领地格 -> 执行买/升级/付过路费，然后恢复回合 */
-async function manualResolve(t) {
-  if (!pendingTile || pendingTile !== t || !humanTileResolve) return;
-  const p = players.find(x => x.isHuman && x.alive);
-  const res = humanTileResolve;
-  humanTileResolve = null;
-  pendingTile = null;
-  hideTilePrompt();
-  if (!p) { res(); return; }
-  if (t.owner && t.owner !== p) {
-    const rent = computeRent(t);
-    log(`💰 ${p.name} 支付过路费 ${rent} 给 ${t.owner.name}`, "l-bad");
-    await charge(p, rent, t.owner, `${t.name} 过路费`);
-  } else {
-    await resolveLand(p, t, true);
+/* 真人落格：操作板出按钮，点击后执行并恢复回合 */
+async function panelTileAction(p, t) {
+  showTileCard(t, tileCardBody(t, p), null);
+  await sleep(700);
+  return new Promise(resolve => {
+    const done = async (fn) => {
+      panelPending = null;
+      try { if (fn) await fn(); } finally { resolve(); }
+    };
+    if (!t.owner) {
+      const price = buyPrice(t, p);
+      if (p.cash >= price) {
+        showTileCard(t, tileCardBody(t, p), [
+          { label: `买下（-${price}）`, onClick: () => done(() => resolveLand(p, t, true, true)) },
+          { label: "放弃", secondary: true, onClick: () => done() },
+        ]);
+        panelPending = { tile: t, act: () => done(() => resolveLand(p, t, true, true)) };
+      } else {
+        showTileCard(t, tileCardBody(t, p) + `\n\n⚠️ 现金不足（需 $${price}）`, [
+          { label: "知道了", secondary: true, onClick: () => done() },
+        ]);
+        panelPending = { tile: t, act: () => done() };
+      }
+    } else if (t.owner === p) {
+      if (t.level >= CFG.MAX_LEVEL) {
+        showTileCard(t, tileCardBody(t, p), [{ label: "已满级 · 继续", secondary: true, onClick: () => done() }]);
+        panelPending = { tile: t, act: () => done() };
+      } else {
+        const cost = upgradeCost(t, p);
+        if (p.cash >= cost) {
+          showTileCard(t, tileCardBody(t, p), [
+            { label: `升级到 Lv${t.level + 1}（-${cost}）`, onClick: () => done(() => resolveLand(p, t, true, true)) },
+            { label: "下次再说", secondary: true, onClick: () => done() },
+          ]);
+          panelPending = { tile: t, act: () => done(() => resolveLand(p, t, true, true)) };
+        } else {
+          showTileCard(t, tileCardBody(t, p) + `\n\n⚠️ 现金不足升级（需 $${cost}）`, [
+            { label: "知道了", secondary: true, onClick: () => done() },
+          ]);
+          panelPending = { tile: t, act: () => done() };
+        }
+      }
+    } else {
+      const rent = computeRent(t);
+      showTileCard(t, tileCardBody(t, p), [
+        { label: `支付过路费（-${rent}）`, onClick: () => done(async () => {
+          log(`💰 ${p.name} 支付过路费 ${rent} 给 ${t.owner.name}`, "l-bad");
+          await charge(p, rent, t.owner, `${t.name} 过路费`);
+        }) },
+      ]);
+      panelPending = { tile: t, act: () => done(async () => {
+        log(`💰 ${p.name} 支付过路费 ${rent} 给 ${t.owner.name}`, "l-bad");
+        await charge(p, rent, t.owner, `${t.name} 过路费`);
+      }) };
+    }
+  });
+}
+
+/* 操作板格子说明文案 */
+function tileCardBody(t, p) {
+  if (t.type === "land") {
+    const mono = monopolyOwner(t.region, t.owner) ? "（垄断 ×2）" : "";
+    if (!t.owner) {
+      return `地价 <b>$${t.price}</b>${buyPrice(t, p) !== t.price ? `（角色折扣价 $${buyPrice(t, p)}）` : ""}\nLv1 过路费 $${Math.round(t.price * CFG.RENT_MULT[1])} · Lv3 过路费 $${Math.round(t.price * CFG.RENT_MULT[3])}`;
+    }
+    if (t.owner === p) {
+      return `你的产业 · Lv${t.level}${mono}\n当前过路费 $${Math.round(t.price * CFG.RENT_MULT[t.level])}${t.level < CFG.MAX_LEVEL ? ` → Lv${t.level + 1} 过路费 $${Math.round(t.price * CFG.RENT_MULT[t.level + 1])}` : "（满级）"}`;
+    }
+    return `业主：<b>${t.owner.name}</b> · Lv${t.level}${mono}\n过路费 <b>$${computeRent(t)}</b>`;
   }
-  res();
+  if (t.type === "nest") return `牌堆剩 ${t.deck ? t.deck.length : 0} 张 · 摊开 3 张由你亲手选一张`;
+  if (t.type === "jar") return `支付 $${CFG.JAR_PAY} 或停 1 回合`;
+  if (t.type === "start") return `路过领 $${subsidy()}（并偿还欠款）`;
+  return "花田小径，无事发生";
 }
 
-async function resolveLand(p, t, fromClick) {
+async function resolveLand(p, t, fromClick, confirmed) {
   if (!t.owner) {
     const price = buyPrice(t, p);
     let bought = false;
     if (p.isHuman) {
-      bought = await showModal({
+      if (confirmed) bought = true;   // 操作板按钮即确认，不再二次弹窗
+      else bought = await showModal({
         title: `🐝 「${t.name}」无主`,
         body: `${t.region} · 地价 ${price} 熊熊币${price !== t.price ? `（角色折扣，原价 ${t.price}）` : ""}\nLv1 过路费 ${Math.round(t.price * CFG.RENT_MULT[1])} · Lv3 过路费 ${Math.round(t.price * CFG.RENT_MULT[3])}\n\n你的现金：${p.cash}`,
         buttons: [{ label: `买下（-${price}）`, value: true }, { label: "放弃", value: false, secondary: true }],
@@ -927,7 +989,8 @@ async function resolveLand(p, t, fromClick) {
     const nextLv = t.level + 1;
     let up = false;
     if (p.isHuman) {
-      up = await showModal({
+      if (confirmed) up = true;   // 操作板按钮即确认
+      else up = await showModal({
         title: `🔨 升级「${t.name}」`,
         body: `Lv${t.level} → Lv${nextLv}（${["小摊", "小店", "大楼"][t.level]} → ${["小摊", "小店", "大楼"][t.level]}）\n升级费 ${cost} 熊熊币${p.holdPromo ? "（大促销已减半！）" : ""}\n升级后过路费：${Math.round(t.price * CFG.RENT_MULT[t.level])} → ${Math.round(t.price * CFG.RENT_MULT[nextLv])}\n\n你的现金：${p.cash}`,
         buttons: [{ label: `升级到 Lv${nextLv}`, value: true }, { label: "下次再说", value: false, secondary: true }],
@@ -945,7 +1008,6 @@ async function resolveLand(p, t, fromClick) {
     updateUI();
   } else {
     const rent = computeRent(t);
-    if (!fromClick) pendingTile = null;
     log(`⚠️ ${p.name} 踩到了 ${t.owner.name} 的「${t.name}」（Lv${t.level}${monopolyOwner(t.region, t.owner) ? " · 垄断×2" : ""}），需付过路费 ${rent}`, "l-bad");
     await sleep(900);
     await charge(p, rent, t.owner, `${t.name} 过路费`);
@@ -1233,5 +1295,5 @@ globalThis.__G = {
   get turnIdx() { return turnIdx; },
   get difficulty() { return aiDifficulty; },
   set difficulty(v) { aiDifficulty = v; },
-  get pendingTile() { return pendingTile; },
+  get pendingTile() { return panelPending; },
 };
