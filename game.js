@@ -144,6 +144,12 @@ function showModal({ title, body, buttons, cardFace }) {
     modal.querySelectorAll("button").forEach(btn => {
       btn.onclick = () => { mask.style.display = "none"; resolve(buttons[+btn.dataset.i].value); };
     });
+    // v0.8b：点击弹窗外空白处 = 关闭（无按钮时返回 null）
+    mask.onclick = e => {
+      if (e.target !== mask) return;
+      mask.style.display = "none";
+      resolve(buttons && buttons.length ? buttons[buttons.length - 1].value : null);
+    };
   });
 }
 
@@ -918,6 +924,7 @@ function showPickSpread(p, hand, t) {
     html += `</div>`;
     modal.innerHTML = html;
     mask.style.display = "flex";
+    mask.onclick = null;   // 摊牌必须选一张，不允许点空白关闭
     modal.querySelectorAll(".pick-card").forEach(el => {
       el.onclick = () => {
         const c = hand[+el.dataset.i];
