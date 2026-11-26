@@ -163,6 +163,7 @@ let dirty = true;                 // 脏标记：仅在需要时重绘
 const bears = {};                 // playerId -> {px, py}（棋盘逻辑坐标）
 const TILE = 72;                  // 1 格逻辑边长
 let decoTrees = [];               // 中央装饰（初始化时固定）
+let marginBushes = [], marginFlies = [];  // 棋盘外围装饰（v0.9b）
 
 // 32 格 -> 10x8 方环网格坐标（v0.5 修复：左列原公式与左下角重叠且漏一格，导致首尾断开）
 function tileGrid(pos) {
@@ -191,6 +192,25 @@ function initScene() {
     const tx = (rnd() - 0.5) * 6.8, tz = (rnd() - 0.5) * 4.8;
     if (Math.abs(tx) < 1.6 && Math.abs(tz) < 1.4) continue;
     decoTrees.push({ x: tx, z: tz, dark: i % 2 === 0 });
+  }
+
+  // v0.9b：棋盘外围装饰（灌木剪影 + 萤火虫），填充两侧/上下空区
+  marginBushes = [];
+  marginFlies = [];
+  let seed2 = 20261126;
+  const rnd2 = () => (seed2 = (seed2 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 90; i++) {
+    const tx = (rnd2() - 0.5) * 22, tz = (rnd2() - 0.5) * 15;
+    // 只保留棋盘底板之外的区域
+    if (Math.abs(tx) < 6.2 && Math.abs(tz) < 5.0) continue;
+    if (rnd2() < 0.62) {
+      marginBushes.push({
+        x: tx, z: tz, s: 0.55 + rnd2() * 0.85,
+        dark: rnd2() < 0.5, rot: rnd2() * Math.PI,
+      });
+    } else {
+      marginFlies.push({ x: tx, z: tz, ph: rnd2() * Math.PI * 2, sp: 0.4 + rnd2() * 0.8, r: 1.6 + rnd2() * 1.6 });
+    }
   }
 
   const resize = () => {
@@ -335,6 +355,35 @@ function render() {
 
   ctx.setTransform(DPR * viewScale * fitScale, 0, 0, DPR * viewScale * fitScale,
     DPR * (W / DPR / 2 + viewOX * viewScale * fitScale), DPR * (H / DPR / 2 + viewOY * viewScale * fitScale));
+
+  // 外围灌木剪影（两层深浅，营造林间层次）
+  marginBushes.forEach(b => {
+    ctx.save();
+    ctx.translate(b.x * TILE, b.z * TILE);
+    ctx.rotate(b.rot);
+    const s = b.s * TILE;
+    ctx.fillStyle = b.dark ? "rgba(9,32,20,.9)" : "rgba(16,46,30,.85)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.9, s * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s * 0.55, s * 0.12, s * 0.5, s * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.5, s * 0.18, s * 0.42, s * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  // 萤火虫（金色光点，柔光晕）
+  const now = performance.now();
+  marginFlies.forEach(f => {
+    const a = 0.35 + 0.3 * Math.sin(now / 900 * f.sp + f.ph);
+    const fx = f.x * TILE, fy = f.z * TILE;
+    ctx.fillStyle = `rgba(242,201,76,${(a * 0.28).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(fx, fy, f.r * 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(250,225,130,${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(fx, fy, f.r, 0, Math.PI * 2); ctx.fill();
+  });
 
   // 米色绒面棋盘底板（带投影 + 金线内框）
   ctx.save();
