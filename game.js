@@ -216,8 +216,8 @@ function initScene() {
     const h = area ? area.clientHeight : innerHeight;
     canvas.width = Math.round(w * DPR);
     canvas.height = Math.round(h * DPR);
-    // 竖版棋盘 8×10 格：约 832×1040，适配上屏区域
-    fitScale = Math.min(w / (8 * TILE + 70), h / (10 * TILE + 70));
+    // 竖版棋盘 8×10 格：满宽适配（v1.1 只留 7px 呼吸边）
+    fitScale = Math.min(w / (8 * TILE + 14), h / (10 * TILE + 14));
     dirty = true;
   };
   addEventListener("resize", resize);
@@ -250,7 +250,7 @@ function initScene() {
 
   (function loop() {
     requestAnimationFrame(loop);
-    if (dirty) { dirty = false; render(); }
+    if (dirty || running) { dirty = false; render(); }   // running 时持续重绘以驱动呼吸高亮
   })();
 }
 
@@ -345,11 +345,11 @@ function roundRect(x, y, w, h, r) {
 function render() {
   const W = canvas.width, H = canvas.height;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // 深林绿桌面（v0.9 高级配色）
+  // 暖阳奶油底（v1.1 陶土暖阳风）
   const bg = ctx.createRadialGradient(W / 2, H * 0.32, H * 0.1, W / 2, H / 2, Math.max(W, H) * 0.75);
-  bg.addColorStop(0, "#1d4a33");
-  bg.addColorStop(0.6, "#123223");
-  bg.addColorStop(1, "#081c12");
+  bg.addColorStop(0, "#f6ecd6");
+  bg.addColorStop(0.6, "#eddfc2");
+  bg.addColorStop(1, "#dfc9a3");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   ctx.setTransform(DPR * viewScale * fitScale, 0, 0, DPR * viewScale * fitScale,
@@ -361,7 +361,7 @@ function render() {
     ctx.translate(b.x * TILE, b.z * TILE);
     ctx.rotate(b.rot);
     const s = b.s * TILE;
-    ctx.fillStyle = b.dark ? "rgba(9,32,20,.9)" : "rgba(16,46,30,.85)";
+    ctx.fillStyle = b.dark ? "rgba(122,116,80,.34)" : "rgba(150,150,100,.26)";
     ctx.beginPath();
     ctx.ellipse(0, 0, s * 0.9, s * 0.55, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -373,14 +373,14 @@ function render() {
     ctx.fill();
     ctx.restore();
   });
-  // 萤火虫（金色光点，柔光晕）
+  // 花粉光点（陶土暖色，柔光晕）
   const now = performance.now();
   marginFlies.forEach(f => {
     const a = 0.35 + 0.3 * Math.sin(now / 900 * f.sp + f.ph);
     const fx = f.x * TILE, fy = f.z * TILE;
-    ctx.fillStyle = `rgba(242,201,76,${(a * 0.28).toFixed(3)})`;
+    ctx.fillStyle = `rgba(207,107,79,${(a * 0.25).toFixed(3)})`;
     ctx.beginPath(); ctx.arc(fx, fy, f.r * 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = `rgba(250,225,130,${a.toFixed(3)})`;
+    ctx.fillStyle = `rgba(232,135,95,${a.toFixed(3)})`;
     ctx.beginPath(); ctx.arc(fx, fy, f.r, 0, Math.PI * 2); ctx.fill();
   });
 
@@ -394,9 +394,9 @@ function render() {
   ctx.fillStyle = bp; ctx.fill();
   ctx.restore();
   roundRect(-4.35 * TILE, -5.35 * TILE, 8.7 * TILE, 10.7 * TILE, 26);
-  ctx.strokeStyle = "rgba(212,175,55,.65)"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.strokeStyle = "rgba(163,74,51,.6)"; ctx.lineWidth = 2.5; ctx.stroke();
   roundRect(-4.18 * TILE, -5.18 * TILE, 8.36 * TILE, 10.36 * TILE, 20);
-  ctx.strokeStyle = "rgba(212,175,55,.22)"; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.strokeStyle = "rgba(163,74,51,.2)"; ctx.lineWidth = 1.2; ctx.stroke();
 
   // 中央场地：两个卡牌区（命运 / 机会）
   drawCardZone(-1.1 * TILE, -1.75 * TILE, "🎴 命运", "#8a7fb8", "好事坏事，天注定");
@@ -415,6 +415,23 @@ function render() {
 
   // 棋盘格
   tiles.forEach(t => drawTile(t, tilePx(t.pos)));
+
+  // 行动高亮：当前回合玩家所在格，呼吸光环（v1.1）
+  if (running) {
+    const cur = players[turnIdx];
+    if (cur && cur.alive) {
+      const p = tilePx(cur.pos);
+      const pulse = Math.sin(now / 420) * 0.5 + 0.5;
+      ctx.strokeStyle = `rgba(207,107,79,${(0.45 + pulse * 0.45).toFixed(3)})`;
+      ctx.lineWidth = 4;
+      roundRect(p.px - TILE / 2 - 3, p.py - TILE / 2 - 3, TILE + 6, TILE + 6, 12);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(232,135,95,${(0.2 + pulse * 0.3).toFixed(3)})`;
+      ctx.lineWidth = 7;
+      roundRect(p.px - TILE / 2 - 7, p.py - TILE / 2 - 7, TILE + 14, TILE + 14, 15);
+      ctx.stroke();
+    }
+  }
 
   // 熊熊（最后画，永远在最上层）
   players.filter(p => p.alive).forEach(p => drawBear(p));
