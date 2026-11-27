@@ -103,7 +103,7 @@
     text-align: center; line-height: 1.06; width: 100%;
     word-break: break-all; overflow: hidden;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-    flex: 0 1 auto; padding: 0 1px;
+    flex: 0 0 auto; padding: 0 1px;
   }
   .cell .c-lv {
     position: absolute; bottom: 1px; right: 2px;
@@ -111,14 +111,19 @@
     background: var(--owner, #888); border-radius: 4px; padding: 0 3px; line-height: 1.25;
     z-index: 1;
   }
-  .cell .c-price { font-size: var(--fs-price, 10px); font-weight: 700; color: #b03a2e; flex: 0 0 auto; }
-  .cell .c-sub { font-size: var(--fs-price, 10px); color: var(--ink-soft); font-weight: 500; flex: 0 0 auto; white-space: nowrap; }
+  .cell .c-price { font-size: var(--fs-price, 10px); font-weight: 700; color: #b03a2e; flex: 0 0 auto; line-height: 1.05; }
+  /* 上/下边与角格：价格钉在格子底部（远离色条一侧视觉更稳），名称占满剩余空间 */
+  .cell[data-side="bottom"] .c-price, .cell[data-side="top"] .c-price, .cell.corner .c-price {
+    position: absolute; bottom: 1px; left: 0; right: 0; text-align: center;
+  }
+  .cell[data-side="bottom"] .c-inner, .cell[data-side="top"] .c-inner, .cell.corner .c-inner { padding-bottom: calc(var(--fs-price, 10px) * 1.15); }
+  .cell .c-sub { font-size: var(--fs-price, 10px); color: var(--ink-soft); font-weight: 500; flex: 0 0 auto; white-space: nowrap; line-height: 1.05; }
   .cell .c-stars { font-size: var(--fs-price, 10px); letter-spacing: -1.5px; flex: 0 0 auto; line-height: 1; }
 
   /* 色条：贴向棋盘中心一侧（上/下边占 22% 高，左/右边占 22% 宽） */
   .cell .c-bar { flex: 0 0 auto; width: 100%; }
   .cell[data-side="bottom"] .c-bar { height: 22%; border-radius: 0 0 2px 2px; order: -1; }
-  .cell[data-side="top"] .c-bar { height: 22%; border-radius: 2px 2px 0 0; }
+  .cell[data-side="top"] .c-bar { height: 22%; border-radius: 2px 2px 0 0; order: 2; }
   .cell[data-side="left"] { flex-direction: row-reverse; }
   .cell[data-side="right"] { flex-direction: row; }
   .cell[data-side="left"] .c-bar, .cell[data-side="right"] .c-bar { width: 22%; height: auto; }
@@ -133,9 +138,13 @@
   .cell[data-side="left"] .c-name, .cell[data-side="right"] .c-name {
     writing-mode: vertical-rl; text-orientation: upright;
     -webkit-line-clamp: unset; display: block; word-break: keep-all;
-    width: auto; max-width: 100%; max-height: 100%; flex: 0 1 auto;
+    width: auto; max-width: 100%; max-height: 72%; flex: 0 1 auto;
     overflow: hidden; line-height: 1.0; letter-spacing: 0;
-    font-size: var(--fs-price, 10px);
+    font-size: var(--fs-name, 10px);
+  }
+  .cell[data-side="left"] .c-price, .cell[data-side="right"] .c-price,
+  .cell[data-side="left"] .c-sub, .cell[data-side="right"] .c-sub {
+    writing-mode: vertical-rl; text-orientation: mixed; flex: 0 0 auto; max-height: 26%;
   }
   .cell[data-side="left"] .c-emoji, .cell[data-side="right"] .c-emoji {
     font-size: var(--fs-price, 10px); line-height: 1; flex: 0 0 auto;
