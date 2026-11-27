@@ -154,7 +154,7 @@ function showModal({ title, body, buttons, cardFace }) {
  * ============================================================ */
 const css = n => "#" + n.toString(16).padStart(6, "0");
 let canvas, ctx, DPR = 1;
-let viewScale = 1, viewOX = 0, viewOY = 0, fitScale = 1;
+let viewScale = 1, viewOX = 0, viewOY = 0, fitSX = 1, fitSY = 1;  // v1.2：横纵独立缩放，棋盘铺满上屏
 let dirty = true;                 // 脏标记：仅在需要时重绘
 const bears = {};                 // playerId -> {px, py}（棋盘逻辑坐标）
 const TILE = 104;                 // 1 格逻辑边长（v1.0 竖屏放大）
@@ -216,8 +216,10 @@ function initScene() {
     const h = area ? area.clientHeight : innerHeight;
     canvas.width = Math.round(w * DPR);
     canvas.height = Math.round(h * DPR);
-    // 竖版棋盘 8×10 格：满宽适配（v1.1 只留 7px 呼吸边）
-    fitScale = Math.min(w / (8 * TILE + 14), h / (10 * TILE + 14));
+    // v1.2：横纵独立缩放铺满上屏（各方向保证 ≥ 区域，形变钳制在 ±12% 内）
+    const sxMin = w / (8 * TILE + 8), syMin = h / (10 * TILE + 8);
+    fitSX = Math.max(sxMin, syMin / 1.12);
+    fitSY = Math.max(syMin, sxMin / 1.12);
     dirty = true;
   };
   addEventListener("resize", resize);
@@ -258,10 +260,10 @@ function initScene() {
 function screenToBoard(clientX, clientY) {
   const area = document.getElementById("board-area");
   const r = area.getBoundingClientRect();
-  const s = viewScale * fitScale;
+  const s = viewScale * fitSX;
   return {
     px: (clientX - r.left - r.width / 2) / s - viewOX,
-    py: (clientY - r.top - r.height / 2) / s - viewOY,
+    py: (clientY - r.top - r.height / 2) / (viewScale * fitSY) - viewOY,
   };
 }
 
@@ -352,8 +354,8 @@ function render() {
   bg.addColorStop(1, "#dfc9a3");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  ctx.setTransform(DPR * viewScale * fitScale, 0, 0, DPR * viewScale * fitScale,
-    DPR * (W / DPR / 2 + viewOX * viewScale * fitScale), DPR * (H / DPR / 2 + viewOY * viewScale * fitScale));
+  ctx.setTransform(DPR * viewScale * fitSX, 0, 0, DPR * viewScale * fitSY,
+    DPR * (W / DPR / 2 + viewOX * viewScale * fitSX), DPR * (H / DPR / 2 + viewOY * viewScale * fitSY));
 
   // 外围灌木剪影（两层深浅，营造林间层次）
   marginBushes.forEach(b => {
