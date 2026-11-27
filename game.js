@@ -215,7 +215,8 @@ function initScene() {
   // 高度富余则页面自然留白（不拉伸棋盘，避免格子变长方形）。
   const fitFonts = () => {
     const wrapEl = boardEl.parentElement;
-    const cs = getComputedStyle(wrapEl);
+    if (!wrapEl || !wrapEl.style) return;   // 无头环境/桩 DOM 兜底
+    const cs = typeof getComputedStyle === "function" ? getComputedStyle(wrapEl) : { paddingLeft: "0", paddingRight: "0" };
     const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     const availW = ((document.getElementById("app") || {}).clientWidth || innerWidth) - padX;
     const availH = innerHeight - 250;
@@ -652,8 +653,12 @@ async function panelTileAction(p, t) {
   showTileCard(t, tileCardBody(t, p), null);
   await sleep(700);
   return new Promise(resolve => {
+    let settled = false;   // v2.2 修复：一次落格只允许一次操作，点击后立即锁死并清空按钮
     const done = async (fn) => {
+      if (settled) return;
+      settled = true;
       panelPending = null;
+      clearTileCard();     // 立刻移除按钮，杜绝 AI 回合期间连点旧按钮重复买/升
       try { if (fn) await fn(); } finally { resolve(); }
     };
     if (!t.owner) {
