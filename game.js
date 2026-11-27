@@ -222,10 +222,10 @@ function initScene() {
     const size = Math.max(260, Math.min(availW, availH, 860));
     wrapEl.style.setProperty("--bd-size", Math.floor(size) + "px");
     const cellPx = (size - 14 - 3 * 8) / 9;
-    // 40px 格：名称 11px 两行（2+2 字），角标 10px
-    wrapEl.style.setProperty("--fs-name", Math.max(8.5, cellPx * 0.275).toFixed(1) + "px");
-    wrapEl.style.setProperty("--fs-price", Math.max(7.5, cellPx * 0.25).toFixed(1) + "px");
-    wrapEl.style.setProperty("--fs-emoji", Math.max(10, cellPx * 0.36).toFixed(1) + "px");
+    // 41px 格：名称 2 行 ~10px + 价格 ~8.5px，刚好填满色条以外的 ~31px
+    wrapEl.style.setProperty("--fs-name", Math.max(8.5, cellPx * 0.25).toFixed(1) + "px");
+    wrapEl.style.setProperty("--fs-price", Math.max(7.5, cellPx * 0.21).toFixed(1) + "px");
+    wrapEl.style.setProperty("--fs-emoji", Math.max(10, cellPx * 0.34).toFixed(1) + "px");
   };
   fitFonts();
   setTimeout(fitFonts, 360);   // 等字体/flex 布局稳定后再校一次
@@ -245,19 +245,20 @@ function renderCell(t) {
   if (t.type === "land") {
     const col = css(REGION_COLOR[t.region]);
     bar = `<div class="c-bar" style="background:${col}"></div>`;
-    const nm = t.name.length > 4 ? t.name.slice(0, 4) : t.name;
+    const nm = t.name.length > 3 ? t.name.slice(0, 3) : t.name;
     inner = `<div class="c-inner">
       <div class="c-name">${nm}</div>
+      <div class="c-price">$${t.price}</div>
       ${t.owner ? `<div class="c-lv">${t.level}</div>` : ""}
     </div>`;
   } else if (t.type === "start") {
-    inner = `<div class="c-inner"><div class="c-emoji">🌳</div><div class="c-name">起点</div></div>`;
+    inner = `<div class="c-inner"><div class="c-emoji">🌳</div><div class="c-name">起点</div><div class="c-price">+$${subsidy()}</div></div>`;
   } else if (t.type === "nest") {
-    inner = `<div class="c-inner"><div class="c-emoji">🐝</div><div class="c-name">蜂巢</div></div>`;
+    inner = `<div class="c-inner"><div class="c-emoji">🐝</div><div class="c-name">蜂巢</div><div class="c-sub">剩${t.deck ? t.deck.length : "?"}张</div></div>`;
   } else if (t.type === "jar") {
-    inner = `<div class="c-inner"><div class="c-emoji">🍯</div><div class="c-name">糖罐</div></div>`;
+    inner = `<div class="c-inner"><div class="c-emoji">🍯</div><div class="c-name">糖罐</div><div class="c-sub">$${CFG.JAR_PAY}</div></div>`;
   } else {
-    inner = `<div class="c-inner"><div class="c-emoji">🌼</div></div>`;
+    inner = `<div class="c-inner"><div class="c-emoji">🌼</div><div class="c-sub">小径</div></div>`;
   }
   el.innerHTML = bar + inner;
   el.title = tileTitle(t);
