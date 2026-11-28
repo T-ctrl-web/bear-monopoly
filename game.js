@@ -706,7 +706,7 @@ function showReport(opts) {
       <button id="rp-save" class="secondary" ${png ? "" : "disabled"}>保存战报</button>
       ${moment
         ? `<button id="rp-again">继续游戏</button>`
-        : `<button id="rp-again">再来一局</button>`}
+        : `<button id="rp-link" class="secondary">复制挑战链接</button><button id="rp-again">再来一局</button>`}
     </div>`;
   mask.style.display = "flex";
   mask.onclick = moment ? (e => { if (e.target === mask) mask.style.display = "none"; }) : null;
@@ -722,6 +722,14 @@ function showReport(opts) {
   };
   if (again) again.onclick = () => {
     if (moment) mask.style.display = "none"; else location.reload();
+  };
+  const linkBtn = $("rp-link");
+  if (linkBtn) linkBtn.onclick = () => {
+    const url = scoreLink(d);
+    if (!url) { showToast("生成链接失败，请直接截图分享", 3000); return; }
+    copyText(url).then(ok => {
+      showToast(ok ? "⚔️ 挑战链接已复制，发给好友来超越你！" : "复制失败，长按地址栏分享本页", 3200);
+    });
   };
 }
 
@@ -761,6 +769,55 @@ function hideMoment() {
   const el = $("moment-banner");
   if (el && el.style) el.style.display = "none";
   if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
+}
+
+/* ---------------- v2.5 URL 战绩码：把成绩编进链接，好友点开直接看到挑战目标 ---------------- */
+function encodeScore(d) {
+  try {
+    const o = { n: d.charName, w: d.worth, r: d.rank, t: d.total, u: d.turns, h: d.title.name, f: d.diff };
+    return btoa(encodeURIComponent(JSON.stringify(o))).replace(/\+/g, "-").replace(/\//g, "_");
+  } catch (e) { return null; }
+}
+function decodeScore(str) {
+  try {
+    return JSON.parse(decodeURIComponent(atob(str.replace(/-/g, "+").replace(/_/g, "/"))));
+  } catch (e) { return null; }
+}
+function scoreLink(d) {
+  const code = encodeScore(d);
+  if (!code) return null;
+  const base = (typeof location !== "undefined" && location.href || "").split("#")[0];
+  return base + "#r=" + code;
+}
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => copyFallback(text));
+  }
+  return Promise.resolve(copyFallback(text));
+}
+function copyFallback(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    if (document.body) document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand && document.execCommand("copy");
+    if (ta.remove) ta.remove();
+    return !!ok;
+  } catch (e) { return false; }
+}
+/* 开局页顶部：带着 #r= 链接进来时展示挑战横幅 */
+function showChallengeBanner() {
+  const m = (location.hash || "").match(/#r=([A-Za-z0-9\-_=]+)/);
+  if (!m) return;
+  const s = decodeScore(m[1]);
+  const box = $("challenge-box");
+  if (!s || !box || !box.style) return;
+  box.innerHTML = `⚔️ <b>${s.n}</b> 刚刚打出「${s.h}」<br>
+    净资产 🍯 ${(s.w || 0).toLocaleString()} · 第 ${s.r || "?"}/${s.t || "?"} 名 · ${s.u || "?"} 回合（${s.f || "普通"}难度）<br>
+    <span class="cb-go">点「开始比赛」，超越他！</span>`;
+  box.style.display = "block";
+  log(`⚔️ 挑战开启：${s.n} 的成绩是 🍯${s.w}，看你的了！`, "l-card");
 }
 
 function checkWinner() {
@@ -1292,6 +1349,7 @@ function setupUI() {
     };
   });
   $("start-btn").onclick = startGame;
+  showChallengeBanner();
 }
 
 function startGame() {
