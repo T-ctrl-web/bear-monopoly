@@ -522,6 +522,17 @@
   #setup #start-btn:hover { transform: translateY(-2px); filter: brightness(1.06); }
   #setup .tip { font-size: 11px; color: #6d7683; margin-top: 13px; grid-column: 1 / -1; }
 
+  /* v2.5 URL 战绩码挑战横幅 */
+  #challenge-box {
+    display: none; margin: 10px auto 0; max-width: 340px; text-align: center;
+    background: linear-gradient(160deg, rgba(240,196,106,.14), rgba(216,180,92,.05));
+    border: 1.5px solid var(--gold); border-radius: 14px;
+    padding: 11px 16px; font-size: 12.5px; line-height: 1.8; color: #e8e2d4;
+    animation: pop .3s ease-out;
+  }
+  #challenge-box b { color: #f2d894; font-size: 14px; }
+  #challenge-box .cb-go { color: var(--gold); font-weight: 700; font-size: 13px; }
+
   @media (max-width: 760px), (orientation: portrait) {
     #setup .box { padding: 16px 18px; gap: 6px 16px; border-radius: 18px; grid-template-columns: 1fr; }
     #setup h1 { font-size: 21px; letter-spacing: 1px; }
@@ -570,6 +581,7 @@
       <div class="left-col">
         <h1>蜜熊岛大富翁</h1>
         <div class="sub">熊熊岛年度财富之争 · 淘汰制<br>最后留下的熊熊，加冕年度首富！</div>
+        <div id="challenge-box"></div>
         <div class="sec-title">参赛熊熊数量（你是其中 1 位真人）</div>
         <div class="count-btns">
           <button data-n="3" class="on">3 位</button>
@@ -591,6 +603,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=47"></script>
+  <script src="game.js?v=48"></script>
 </body>
 </html>
