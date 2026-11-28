@@ -101,6 +101,17 @@ let totalPlayers = 3;
 let aiDifficulty = "normal";   // easy / normal / hard
 let humanChar = CHARS[0];
 
+/* ---------------- 对局统计（v2.3：结算战报数据） ---------------- */
+const matchStats = {
+  wealth: [],      // 真人净资产曲线 [{t, v}]
+  drama: [],       // 高光事件 [{emoji, text, by}]
+  outOrder: [],    // 出局顺序（赢家不在内）
+  turns: 0,        // 总回合数
+  humanTurns: 0,   // 真人回合数
+  peakWealth: CFG.START_CASH,  // 真人净资产峰值
+};
+const matchLog = [];   // 完整对局日志（战报挑素材用）
+
 /* ---------------- DOM 引用 ---------------- */
 const $ = id => document.getElementById(id);
 const turnBanner = $("turn-banner"), playersEl = $("players"), logEl = $("log-box"),
@@ -114,6 +125,7 @@ function log(msg, cls) {
   d.className = "ln" + (cls ? " " + cls : "");
   d.textContent = msg;
   logEl.appendChild(d);
+  matchLog.push({ msg, cls: cls || "" });
   while (logEl.children.length > 40) logEl.removeChild(logEl.children[0]);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -392,6 +404,17 @@ function makePlayer(char, idx, isHuman) {
 }
 
 /* ---------------- 经济结算 ---------------- */
+function netWorth(p) { return p.cash + p.props.reduce((s, t) => s + t.price, 0); }
+function recordWealth() {
+  const h = players.find(p => p.isHuman);
+  if (!h || !running) return;
+  const v = netWorth(h);
+  if (v > matchStats.peakWealth) matchStats.peakWealth = v;
+  const last = matchStats.wealth[matchStats.wealth.length - 1];
+  if (last && last.v === v) return;
+  matchStats.wealth.push({ t: matchStats.turns, v });
+  if (matchStats.wealth.length > 120) matchStats.wealth.shift();
+}
 function monopolyOwner(region, owner) {
   const regionTiles = tiles.filter(t => t.type === "land" && t.region === region);
   return regionTiles.every(t => t.owner === owner) ? owner : null;
@@ -495,11 +518,15 @@ async function charge(payer, amount, payee, reason) {
   payer.cash -= amount;
   if (payee && payee.alive) payee.cash += amount;
   log(`💰 ${payer.name} 支付了 ${amount} 熊熊币（${reason}）${payee ? `给 ${payee.name}` : ""}`, amount > 300 ? "l-bad" : "");
+  if (payee && /过路费/.test(reason) && amount >= 300) {
+    matchStats.drama.push({ emoji: "💰", text: `${payee.name} 收 ${payer.name} ${amount} 过路费`, by: payee.name });
+  }
   updateUI();
   return true;
 }
 
 async function eliminate(p, creditor, reason) {
+  matchStats.outOrder.push({ name: p.name, isHuman: p.isHuman, idx: p.idx });
   p.alive = false;
   (p.props || []).forEach(t => {
     t.owner = creditor && creditor.alive ? creditor : null;
@@ -514,17 +541,184 @@ async function eliminate(p, creditor, reason) {
   await sleep(1200);
 }
 
+/* ============================================================
+ * v2.3 结算战报卡片：把一局的高光时刻生成可保存/分享的图片
+ * ============================================================ */
+function humanRank() {
+  const h = players.find(p => p.isHuman);
+  if (!h) return players.length;
+  if (h.alive) return 1;
+  const i = matchStats.outOrder.findIndex(o => o.isHuman);
+  return Math.max(2, players.length - Math.max(0, i));
+}
+
+function pickTitle(h, won, rank) {
+  if (won) {
+    if (matchStats.peakWealth >= 6000) return { name: "蜜熊岛霸主", sub: "整座岛的蜂蜜，基本都归你了" };
+    if (matchStats.peakWealth >= 3500) return { name: "年度熊熊首富", sub: "最后站着的那只熊，就是传奇" };
+    return { name: "险胜的幸运熊", sub: "运气也是实力的一部分" };
+  }
+  if (rank === 2) return { name: "差一点就加冕", sub: "冠军和你之间，只差一个掷骰子" };
+  if (rank >= players.length) return { name: "蜜熊岛观光客", sub: "你来过、看过，也被收过租" };
+  return { name: "首富路上的奋斗熊", sub: "倒在通往王座的路上，也是条好熊" };
+}
+
+function boastLine(h, won, rank) {
+  if (won) return `我用${h.char.name}拿下首富，你来试试？`;
+  if (rank === 2) return `就差一点点！我这${h.char.name}差点翻盘`;
+  return `我当了一次${h.char.name}，被收租收到怀疑熊生`;
+}
+
+function buildReportData() {
+  const h = players.find(p => p.isHuman) || players[0];
+  const alive = players.filter(p => p.alive);
+  const won = h.alive && alive.length === 1;
+  const rank = humanRank();
+  const myDrama = matchStats.drama.filter(d => d.by === h.name);
+  let drama = (myDrama.length ? myDrama : matchStats.drama).slice(0, 3);
+  if (!drama.length) {
+    matchLog.filter(l => /l-good|l-card/.test(l.cls)).slice(-3).forEach(l => {
+      drama.push({ emoji: "🍯", text: l.msg, by: "" });
+    });
+  }
+  return {
+    human: h, won, rank, total: players.length,
+    title: pickTitle(h, won, rank),
+    worth: netWorth(h), cash: h.cash, props: h.props.length,
+    peak: matchStats.peakWealth,
+    wealth: matchStats.wealth.slice(),
+    drama,
+    charName: h.char.name, species: h.char.species,
+    diff: DIFF_NAME[aiDifficulty] || "普通",
+    turns: matchStats.turns,
+    boast: boastLine(h, won, rank),
+  };
+}
+
+function drawReportCanvas(d) {
+  const W = 750, H = 1200;
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext && cv.getContext("2d");
+  if (!ctx || typeof cv.toDataURL !== "function") return null;
+
+  const F = (n, w) => `${w ? 500 : 400} ${n}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+  const FS = n => `900 ${n}px "Noto Serif SC","Songti SC",serif`;
+  const rr = (x, y, w, h, r) => {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+
+  ctx.fillStyle = "#f7f3e9"; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#c9a94f"; ctx.lineWidth = 4; rr(18, 18, W - 36, H - 36, 24); ctx.stroke();
+
+  ctx.fillStyle = "#161d26"; rr(34, 34, W - 68, 270, 18); ctx.fill();
+  ctx.fillStyle = "#d8b45c"; ctx.font = F(22, 1); ctx.textAlign = "center";
+  ctx.fillText("蜜 熊 岛 · 年 度 财 富 之 争", W / 2, 90);
+  ctx.fillStyle = "#f3e6c0"; ctx.font = FS(60);
+  ctx.fillText(d.title.name, W / 2, 178);
+  ctx.fillStyle = "#a8b0bc"; ctx.font = F(24);
+  ctx.fillText(d.title.sub, W / 2, 236);
+
+  ctx.fillStyle = "#6f6248"; ctx.font = F(24); ctx.textAlign = "left";
+  ctx.fillText("最终净资产", 70, 372);
+  ctx.fillStyle = "#2c2418"; ctx.font = FS(68);
+  ctx.fillText("🍯 " + d.worth.toLocaleString(), 68, 452);
+  ctx.fillStyle = "#8a7a58"; ctx.font = F(22); ctx.textAlign = "right";
+  ctx.fillText(`第 ${d.rank} / ${d.total} 名 · 产业 ${d.props} 块`, W - 70, 450);
+
+  ctx.fillStyle = "#2c2418"; ctx.font = F(26); ctx.textAlign = "left";
+  ctx.fillText("资产走势", 70, 520);
+  const gx = 70, gy = 545, gw = W - 140, gh = 180;
+  ctx.fillStyle = "#efe7d2"; rr(gx, gy, gw, gh, 12); ctx.fill();
+  ctx.strokeStyle = "rgba(168,132,46,.25)"; ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(gx, gy + gh * i / 4); ctx.lineTo(gx + gw, gy + gh * i / 4); ctx.stroke(); }
+  const arr = d.wealth.length >= 2 ? d.wealth : [{ t: 0, v: 1500 }, { t: 1, v: d.worth }];
+  const vs = arr.map(a => a.v);
+  const vmin = Math.min.apply(null, vs.concat([0])), vmax = Math.max.apply(null, vs.concat([1500]));
+  const span = Math.max(1, vmax - vmin);
+  const pts = arr.map((a, i) => [gx + 12 + (gw - 24) * i / Math.max(1, arr.length - 1), gy + gh - 12 - ((a.v - vmin) / span) * (gh - 24)]);
+  ctx.beginPath(); ctx.moveTo(pts[0][0], gy + gh - 12);
+  pts.forEach(p => ctx.lineTo(p[0], p[1]));
+  ctx.lineTo(pts[pts.length - 1][0], gy + gh - 12); ctx.closePath();
+  ctx.fillStyle = "rgba(216,180,92,.28)"; ctx.fill();
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.strokeStyle = "#a8842e"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = "#cf6b4f";
+  pts.forEach(p => { ctx.beginPath(); ctx.arc(p[0], p[1], 4, 0, Math.PI * 2); ctx.fill(); });
+
+  ctx.fillStyle = "#2c2418"; ctx.font = F(26); ctx.textAlign = "left";
+  ctx.fillText("本局高光", 70, 790);
+  let yy = 836;
+  const lines = (d.drama.length ? d.drama : [{ emoji: "🍯", text: "稳稳地掷出了每一次骰子" }]).slice(0, 3);
+  lines.forEach((x, i) => {
+    ctx.fillStyle = "#d8b45c"; rr(70, yy - 22, 34, 34, 8); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = F(20); ctx.textAlign = "center";
+    ctx.fillText(x.emoji || "🍯", 87, yy + 1);
+    ctx.fillStyle = "#4a4132"; ctx.font = F(23); ctx.textAlign = "left";
+    const txt = (i + 1) + ". " + x.text;
+    ctx.fillText(txt.length > 26 ? txt.slice(0, 26) + "…" : txt, 118, yy);
+    yy += 48;
+  });
+
+  ctx.fillStyle = "#efe7d2"; rr(70, 985, W - 140, 70, 12); ctx.fill();
+  ctx.fillStyle = "#6f6248"; ctx.font = F(22); ctx.textAlign = "center";
+  ctx.fillText(`${d.charName} · ${d.species} · ${d.diff}难度 · 共 ${d.turns} 回合`, W / 2, 1028);
+
+  ctx.fillStyle = "#161d26"; rr(34, 1080, W - 68, 86, 16); ctx.fill();
+  ctx.fillStyle = "#f0d894"; ctx.font = F(28); ctx.textAlign = "center";
+  ctx.fillText(d.boast, W / 2, 1125);
+  ctx.fillStyle = "#8d97a4"; ctx.font = F(19);
+  ctx.fillText("蜜熊岛大富翁 · 来挑战我的纪录", W / 2, 1156);
+
+  return cv.toDataURL("image/png");
+}
+
+function showReport() {
+  recordWealth();
+  const d = buildReportData();
+  const png = drawReportCanvas(d);
+  reportPng = png;
+  const summary = `称号：${d.title.name}\n净资产：🍯 ${d.worth.toLocaleString()}（第 ${d.rank}/${d.total} 名）\n高光：${d.drama.map(x => x.text).join("；") || "稳扎稳打"}`;
+  modal.innerHTML = `<h3>🏆 本局战报 · ${d.charName}</h3>
+    <div class="report-wrap">${png
+      ? `<img class="report-img" src="${png}" alt="战报卡片">`
+      : `<div class="report-fallback">${summary.replace(/\n/g, "<br>")}</div>`}</div>
+    <div class="report-tip">${png ? "长按图片保存到相册，或点下方按钮下载" : "当前环境不支持生成图片，已显示文字战报"}</div>
+    <div class="m-btns">
+      <button id="rp-save" class="secondary" ${png ? "" : "disabled"}>保存战报</button>
+      <button id="rp-again">再来一局</button>
+    </div>`;
+  mask.style.display = "flex";
+  mask.onclick = null;
+  const save = $("rp-save"), again = $("rp-again");
+  if (save) save.onclick = () => {
+    if (!reportPng) return;
+    const a = document.createElement("a");
+    a.href = reportPng;
+    a.download = "蜜熊岛战报-" + Date.now() + ".png";
+    if (document.body && document.body.appendChild) document.body.appendChild(a);
+    if (typeof a.click === "function") a.click();
+    if (a.remove) a.remove();
+  };
+  if (again) again.onclick = () => location.reload();
+}
+
+let reportPng = null;
+
 function checkWinner() {
   const alive = players.filter(p => p.alive);
   if (alive.length === 1 && running) {
+    recordWealth();
     running = false;
     const w = alive[0];
     log(`👑 ${w.name} 成为年度熊熊首富！金蜂蜜王冠加冕！`, "l-good");
-    showModal({
-      title: "👑 比赛结束！",
-      body: `${w.name}（${w.char.species}）成为年度熊熊首富！\n\n最终持有 ${w.cash} 熊熊币 + ${w.props.length} 块产业。\n\n戴上传说的金蜂蜜王冠！🏆`,
-      buttons: [{ label: "再来一局", value: "restart", secondary: false }],
-    }).then(() => location.reload());
+    showReport();
     return true;
   }
   return false;
@@ -555,8 +749,10 @@ function aliveIdxFrom(i) {
 
 async function nextTurn() {
   if (!running || checkWinner()) return;
+  matchStats.turns++;
   turnIdx = aliveIdxFrom(turnIdx);
   const p = players[turnIdx];
+  if (p.isHuman) matchStats.humanTurns++;
   updateUI();
   if (p.skipTurns > 0) {
     p.skipTurns--;
@@ -804,6 +1000,9 @@ async function nestFlow(p, t) {
     log(`🌙 ${p.name} 的占卜扭转了厄运（角色特性）`, "l-good");
   }
   log(`🃏 ${p.name} 抽到了「${card.name}」`, "l-card");
+  if (card.rarity === "稀有" || card.rarity === "史诗") {
+    matchStats.drama.push({ emoji: "🃏", text: `${p.name} 抽到${card.rarity}卡「${card.name}」`, by: p.name });
+  }
   if (!p.isHuman) {
     await showModal({
       title: `🐝 幸运蜂巢 · ${p.name} 选牌`,
@@ -986,6 +1185,7 @@ function showPlayerCard(p) {
 }
 
 function updateUI() {
+  recordWealth();
   playersEl.innerHTML = "";
   players.forEach((p, i) => {
     const c = document.createElement("div");
@@ -1034,6 +1234,13 @@ function setupUI() {
 }
 
 function startGame() {
+  matchStats.wealth.length = 0;
+  matchStats.drama.length = 0;
+  matchStats.outOrder.length = 0;
+  matchStats.turns = 0;
+  matchStats.humanTurns = 0;
+  matchStats.peakWealth = CFG.START_CASH;
+  matchLog.length = 0;
   $("setup").style.display = "none";
   initScene();
   const chars = [...CHARS].sort(() => Math.random() - 0.5);
@@ -1069,4 +1276,8 @@ globalThis.__G = {
   get difficulty() { return aiDifficulty; },
   set difficulty(v) { aiDifficulty = v; },
   get pendingTile() { return panelPending; },
+  get reportData() { return buildReportData(); },
+  get reportPng() { return reportPng; },
+  get stats() { return matchStats; },
+  drawReportCanvas,
 };
