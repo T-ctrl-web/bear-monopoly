@@ -379,6 +379,47 @@
   #modal .report-tip { font-size: 12px; color: #8a7a58; margin-bottom: 14px; }
   #modal button:disabled { filter: grayscale(.7); cursor: not-allowed; }
 
+  /* ============ v2.4 首局引导 + 情绪顶点分享 ============ */
+  /* 首回合掷骰按钮：呼吸高亮引导 */
+  #roll-btn.guide { animation: rollGuide 1.15s ease-in-out infinite; }
+  @keyframes rollGuide {
+    0%,100% { transform: scale(1); box-shadow: 0 8px 22px rgba(0,0,0,.5), 0 0 0 0 rgba(240,196,106,.7), inset 0 2px 0 rgba(255,255,255,.5); }
+    50% { transform: scale(1.07); box-shadow: 0 8px 26px rgba(0,0,0,.5), 0 0 0 12px rgba(240,196,106,0), inset 0 2px 0 rgba(255,255,255,.5); }
+  }
+  /* 首次买地成就 toast：顶部滑入，不挡操作 */
+  #toast {
+    display: none; position: fixed; top: 104px; left: 50%; transform: translateX(-50%);
+    z-index: 60; max-width: 88vw; padding: 10px 20px; border-radius: 999px;
+    background: linear-gradient(135deg, #f0c46a, var(--gold-deep));
+    color: #2b2109; font-size: 13.5px; font-weight: 700; text-align: center;
+    box-shadow: 0 8px 26px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.5);
+    animation: toastIn .35s ease-out; pointer-events: none;
+  }
+  @keyframes toastIn { from { transform: translate(-50%, -14px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  /* 情绪顶点横幅：卡在棋盘上方，点「晒一下」才生成战报，可关闭 */
+  #moment-banner {
+    display: none; position: fixed; top: 46px; left: 50%; transform: translateX(-50%);
+    z-index: 55; align-items: center; gap: 10px; max-width: 94vw;
+    padding: 8px 10px 8px 16px; border-radius: 14px;
+    background: linear-gradient(135deg, #2f5d50, #1d3d34);
+    border: 1px solid rgba(216,180,92,.6); color: #f7e9c4;
+    box-shadow: 0 10px 30px rgba(0,0,0,.55); animation: toastIn .35s ease-out;
+  }
+  #moment-banner .mb-text { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+  #moment-banner .mb-share {
+    flex: 0 0 auto; border: none; border-radius: 999px; padding: 6px 13px; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; font-weight: 800; color: #2b2109;
+    background: linear-gradient(160deg, #f6d27f, var(--gold));
+    box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  #moment-banner .mb-close {
+    flex: 0 0 auto; width: 24px; height: 24px; border: none; border-radius: 50%; cursor: pointer;
+    background: rgba(255,255,255,.12); color: #f7e9c4; font-size: 17px; line-height: 1;
+  }
+  @media (max-width: 420px) {
+    #moment-banner .mb-text { max-width: 44vw; font-size: 12px; }
+  }
+
   /* 摊牌选卡 */
   #modal .pick-sub { color: #8a7a58; font-size: 12.5px; margin-bottom: 14px; }
   #modal .pick-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 6px; flex-wrap: wrap; }
@@ -521,6 +562,9 @@
 
   <div id="modal-mask"><div id="modal"></div></div>
 
+  <div id="toast"></div>
+  <div id="moment-banner"></div>
+
   <div id="setup">
     <div class="box">
       <div class="left-col">
@@ -547,6 +591,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=46"></script>
+  <script src="game.js?v=47"></script>
 </body>
 </html>
