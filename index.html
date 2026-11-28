@@ -364,6 +364,21 @@
   #modal .card-face .c-rarity { font-size: 11px; border-radius: 6px; padding: 2px 9px; display: inline-block; margin-bottom: 9px; }
   #modal .card-face .c-desc { font-size: 13px; color: #5c4f3c; }
 
+  /* 结算战报卡片（v2.3） */
+  #modal .report-wrap { margin-bottom: 12px; }
+  #modal .report-img {
+    display: block; width: 100%; max-width: 340px; margin: 0 auto;
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  }
+  #modal .report-fallback {
+    background: linear-gradient(160deg, #fffdf8, #f8eeda);
+    border: 1.5px solid var(--clay); border-radius: 12px;
+    padding: 16px; margin-bottom: 12px; text-align: left;
+    font-size: 13px; line-height: 1.9; color: #5c4f3c;
+  }
+  #modal .report-tip { font-size: 12px; color: #8a7a58; margin-bottom: 14px; }
+  #modal button:disabled { filter: grayscale(.7); cursor: not-allowed; }
+
   /* 摊牌选卡 */
   #modal .pick-sub { color: #8a7a58; font-size: 12.5px; margin-bottom: 14px; }
   #modal .pick-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 6px; flex-wrap: wrap; }
@@ -532,6 +547,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=45"></script>
+  <script src="game.js?v=46"></script>
 </body>
 </html>
