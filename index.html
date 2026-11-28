@@ -533,6 +533,16 @@
   #challenge-box b { color: #f2d894; font-size: 14px; }
   #challenge-box .cb-go { color: var(--gold); font-weight: 700; font-size: 13px; }
 
+  /* v2.6 纪录行 + 快速入口 */
+  #best-line { display: none; margin-top: 7px; font-size: 11.5px; color: var(--gold); letter-spacing: .5px; }
+  .quick-row { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  .quick-row button {
+    border: 1.5px solid var(--line); background: var(--bg); color: #d8d2c2;
+    border-radius: 12px; padding: 7px 14px; font-size: 12.5px; cursor: pointer;
+    font-weight: 700; font-family: inherit; transition: all .15s;
+  }
+  .quick-row button:hover { border-color: var(--gold); color: #f2d894; }
+
   @media (max-width: 760px), (orientation: portrait) {
     #setup .box { padding: 16px 18px; gap: 6px 16px; border-radius: 18px; grid-template-columns: 1fr; }
     #setup h1 { font-size: 21px; letter-spacing: 1px; }
@@ -581,6 +591,7 @@
       <div class="left-col">
         <h1>蜜熊岛大富翁</h1>
         <div class="sub">熊熊岛年度财富之争 · 淘汰制<br>最后留下的熊熊，加冕年度首富！</div>
+        <div id="best-line"></div>
         <div id="challenge-box"></div>
         <div class="sec-title">参赛熊熊数量（你是其中 1 位真人）</div>
         <div class="count-btns">
@@ -594,6 +605,10 @@
           <button data-d="hard">😤 困难</button>
         </div>
         <button id="start-btn">开始比赛</button>
+        <div class="quick-row">
+          <button id="speed-btn">⚡ 速战局 · 20回合定胜负</button>
+          <button id="daily-btn">📅 每日挑战 · 全岛同棋盘</button>
+        </div>
       </div>
       <div class="right-col">
         <div class="sec-title">选择你的熊熊角色</div>
@@ -603,6 +618,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=48"></script>
+  <script src="game.js?v=49"></script>
 </body>
 </html>
