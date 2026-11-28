@@ -21,6 +21,7 @@ const CFG = {
   JAR_PAY: 100,            // 糖罐逃脱费
   MAX_LEVEL: 3,
   AI_RESERVE: 300,         // AI 决策保留现金
+  SPEED_TURNS: 20,         // v2.6 速战局：N 回合后按净资产结算
 };
 
 /* ---------------- 棋盘（32 格单环） ---------------- */
@@ -84,7 +85,7 @@ const BLESSING_FALLBACK = { name: "蜜金树祝福", rarity: "稀有", mode: "in
 function makeDeck() {
   const d = [];
   CARDS.forEach(c => { for (let i = 0; i < c.weight; i++) d.push(c); });
-  for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+  for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
   return d;
 }
 function drawFrom(t) {
@@ -100,6 +101,30 @@ let running = false;
 let totalPlayers = 3;
 let aiDifficulty = "normal";   // easy / normal / hard
 let humanChar = CHARS[0];
+
+/* ---------------- v2.6 种子随机 + 对局模式 + 本地纪录 ---------------- */
+let _rng = Math.random;
+function rand() { return _rng(); }
+function setSeed(seed) {   // mulberry32：同种子同序列，每日挑战全岛同牌
+  let a = seed >>> 0;
+  _rng = function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let challengeMode = false, speedMode = false, finalWinner = null, challengeSeedOverride = null;
+function dailyKey() { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+function saveRecords(d) {
+  if (d.worth > +(lsGet("bear-best") || 0)) lsSet("bear-best", d.worth);
+  if (challengeMode) {
+    const k = "bear-daily-" + dailyKey();
+    if (d.worth > +(lsGet(k) || 0)) lsSet(k, d.worth);
+  }
+}
 
 /* ---------------- 对局统计（v2.3：结算战报数据） ---------------- */
 const matchStats = {
@@ -465,7 +490,7 @@ function regionTotal(region) {
 
 function aiWantsBuy(p, tile, price) {
   if (p.cash < price) return false;
-  if (aiDifficulty === "easy") return p.cash - price >= 500 && Math.random() < 0.7;
+  if (aiDifficulty === "easy") return p.cash - price >= 500 && rand() < 0.7;
   if (aiDifficulty === "hard") {
     const lead = leaderPlayer();
     const mine = regionOwnCount(tile.region, p);
@@ -480,7 +505,7 @@ function aiWantsBuy(p, tile, price) {
 
 function aiWantsUpgrade(p, tile, cost) {
   if (p.cash < cost) return false;
-  if (aiDifficulty === "easy") return p.cash - cost >= 600 && Math.random() < 0.6;
+  if (aiDifficulty === "easy") return p.cash - cost >= 600 && rand() < 0.6;
   if (aiDifficulty === "hard") {
     const mine = regionOwnCount(tile.region, p);
     // 已垄断的区域优先升级（垄断×2 收益最大化）
@@ -552,6 +577,11 @@ async function eliminate(p, creditor, reason) {
 function humanRank() {
   const h = players.find(p => p.isHuman);
   if (!h) return players.length;
+  if (finalWinner === h) return 1;
+  if (finalWinner && speedMode) {   // 速战到点：按净资产排名
+    const sorted = players.filter(p => p.alive).sort((a, b) => netWorth(b) - netWorth(a));
+    return Math.max(1, sorted.indexOf(h) + 1);
+  }
   if (h.alive) return 1;
   const i = matchStats.outOrder.findIndex(o => o.isHuman);
   return Math.max(2, players.length - Math.max(0, i));
@@ -576,8 +606,7 @@ function boastLine(h, won, rank) {
 
 function buildReportData() {
   const h = players.find(p => p.isHuman) || players[0];
-  const alive = players.filter(p => p.alive);
-  const won = h.alive && alive.length === 1;
+  const won = finalWinner === h;
   const rank = humanRank();
   const myDrama = matchStats.drama.filter(d => d.by === h.name);
   let drama = (myDrama.length ? myDrama : matchStats.drama).slice(0, 3);
@@ -594,7 +623,7 @@ function buildReportData() {
     wealth: matchStats.wealth.slice(),
     drama,
     charName: h.char.name, species: h.char.species,
-    diff: DIFF_NAME[aiDifficulty] || "普通",
+    diff: challengeMode ? "每日挑战" : speedMode ? "速战" : (DIFF_NAME[aiDifficulty] || "普通"),
     turns: matchStats.turns,
     boast: boastLine(h, won, rank),
   };
@@ -689,6 +718,7 @@ function showReport(opts) {
   const moment = opts.moment || null;   // v2.4：情绪顶点传入的高光文案
   recordWealth();
   const d = buildReportData();
+  if (!moment) saveRecords(d);
   if (moment) {
     d.title = { name: "高光时刻", sub: moment.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, "") };
     d.drama = [{ emoji: "✨", text: moment, by: d.human.name }].concat(d.drama).slice(0, 3);
@@ -774,7 +804,8 @@ function hideMoment() {
 /* ---------------- v2.5 URL 战绩码：把成绩编进链接，好友点开直接看到挑战目标 ---------------- */
 function encodeScore(d) {
   try {
-    const o = { n: d.charName, w: d.worth, r: d.rank, t: d.total, u: d.turns, h: d.title.name, f: d.diff };
+    const o = { n: d.charName, w: d.worth, r: d.rank, t: d.total, u: d.turns, h: d.title.name, f: d.diff,
+      c: challengeMode ? 1 : 0, s: challengeMode ? (challengeSeedOverride || dailyKey()) : 0 };
     return btoa(encodeURIComponent(JSON.stringify(o))).replace(/\+/g, "-").replace(/\//g, "_");
   } catch (e) { return null; }
 }
@@ -817,20 +848,32 @@ function showChallengeBanner() {
     净资产 🍯 ${(s.w || 0).toLocaleString()} · 第 ${s.r || "?"}/${s.t || "?"} 名 · ${s.u || "?"} 回合（${s.f || "普通"}难度）<br>
     <span class="cb-go">点「开始比赛」，超越他！</span>`;
   box.style.display = "block";
+  if (s.c && s.s) {
+    challengeSeedOverride = s.s >>> 0;
+    const sb = $("start-btn");
+    if (sb) { sb.textContent = "⚔️ 接受挑战（同一副牌）"; sb.onclick = () => startGame("challenge-link"); }
+  }
   log(`⚔️ 挑战开启：${s.n} 的成绩是 🍯${s.w}，看你的了！`, "l-card");
 }
 
 function checkWinner() {
+  if (!running) return false;
   const alive = players.filter(p => p.alive);
-  if (alive.length === 1 && running) {
-    recordWealth();
-    running = false;
-    const w = alive[0];
-    log(`👑 ${w.name} 成为年度熊熊首富！金蜂蜜王冠加冕！`, "l-good");
-    showReport();
-    return true;
+  let w = null, how = "";
+  if (alive.length === 1) { w = alive[0]; how = "last"; }
+  else if (speedMode && matchStats.turns >= CFG.SPEED_TURNS) {
+    w = alive.slice().sort((a, b) => netWorth(b) - netWorth(a))[0];
+    how = "score";
   }
-  return false;
+  if (!w) return false;
+  recordWealth();
+  running = false;
+  finalWinner = w;
+  log(how === "score"
+    ? `⏱ 速战 ${CFG.SPEED_TURNS} 回合到点！${w.name} 以净资产 🍯${netWorth(w)} 夺冠！`
+    : `👑 ${w.name} 成为年度熊熊首富！金蜂蜜王冠加冕！`, "l-good");
+  showReport();
+  return true;
 }
 
 /* ---------------- 过起点 ---------------- */
@@ -871,7 +914,7 @@ async function nextTurn() {
     turnIdx = (turnIdx + 1) % players.length;
     return nextTurn();
   }
-  if (p.char.id === "shuishuilu" && Math.random() < 0.2) {
+  if (p.char.id === "shuishuilu" && rand() < 0.2) {
     p.cash += 50;
     log(`💤 ${p.name} 睡着睡着手边多了 50 熊熊币（角色特性）`, "l-good");
     updateUI();
@@ -897,7 +940,7 @@ async function nextTurn() {
 async function doRoll(p) {
   rollBtn.disabled = true;
   if (rollBtn.classList) rollBtn.classList.remove("guide");
-  const n = 1 + Math.floor(Math.random() * 6);
+  const n = 1 + Math.floor(rand() * 6);
   diceEl.textContent = `🎲 ${n}`;
   diceEl.style.display = "block";
   log(`🎲 ${p.name} 掷出 ${n} 点`);
@@ -1112,7 +1155,7 @@ async function nestFlow(p, t) {
     await sleep(1000);
     card = aiPickCard(p, hand);
   }
-  if (p.char.id === "yueyaer" && card.amount < 0 && Math.random() < 0.5) {
+  if (p.char.id === "yueyaer" && card.amount < 0 && rand() < 0.5) {
     card = BLESSING_FALLBACK;
     log(`🌙 ${p.name} 的占卜扭转了厄运（角色特性）`, "l-good");
   }
@@ -1144,8 +1187,8 @@ function cardScore(c) {
 function aiPickCard(p, hand) {
   const sorted = [...hand].sort((a, b) => cardScore(b) - cardScore(a));
   if (aiDifficulty === "hard") return sorted[0];
-  if (aiDifficulty === "normal") return sorted[Math.random() < 0.5 ? 0 : 1];
-  return hand[Math.floor(Math.random() * hand.length)];
+  if (aiDifficulty === "normal") return sorted[rand() < 0.5 ? 0 : 1];
+  return hand[Math.floor(rand() * hand.length)];
 }
 
 /* 真人摊牌选卡：点击卡背 → 翻面展示 → 1.4s 后自动收牌 */
@@ -1236,9 +1279,9 @@ async function applyCard(p, card) {
       if (aiDifficulty === "hard") {
         const lead = leaderPlayer();
         const pool = (lead && lead !== p && lead.alive && lead.props.length > 0) ? [lead] : others;
-        o = pool[Math.floor(Math.random() * pool.length)];
+        o = pool[Math.floor(rand() * pool.length)];
       } else {
-        o = others[Math.floor(Math.random() * others.length)];
+        o = others[Math.floor(rand() * others.length)];
       }
       o.props.sort((a, b) => b.price - a.price);
       const theirs = o.props[0];
@@ -1348,11 +1391,30 @@ function setupUI() {
       b.classList.add("on");
     };
   });
-  $("start-btn").onclick = startGame;
+  $("start-btn").onclick = () => startGame("normal");
+  $("speed-btn").onclick = () => startGame("speed");
+  $("daily-btn").onclick = () => startGame("daily");
+  showBestLine();
   showChallengeBanner();
 }
 
-function startGame() {
+/* 开局页纪录行：历史最佳 + 今日挑战最佳 */
+function showBestLine() {
+  const el = $("best-line");
+  if (!el || !el.style) return;
+  const best = lsGet("bear-best"), daily = lsGet("bear-daily-" + dailyKey());
+  if (!best && !daily) return;
+  el.textContent = `🏆 历史最佳 🍯${best || 0}` + (daily ? ` · 今日挑战最佳 🍯${daily}` : " · 打一局每日挑战，留下今天的成绩");
+  el.style.display = "block";
+}
+
+function startGame(mode) {
+  mode = mode || "normal";
+  challengeMode = mode === "daily" || mode === "challenge-link";
+  speedMode = mode === "speed";
+  finalWinner = null;
+  if (challengeMode) setSeed(challengeSeedOverride || dailyKey());
+  else { _rng = Math.random; challengeSeedOverride = null; }
   matchStats.wealth.length = 0;
   matchStats.drama.length = 0;
   matchStats.outOrder.length = 0;
@@ -1366,14 +1428,16 @@ function startGame() {
   hideMoment();
   $("setup").style.display = "none";
   initScene();
-  const chars = [...CHARS].sort(() => Math.random() - 0.5);
+  const chars = [...CHARS].sort(() => rand() - 0.5);
   players.push(makePlayer(humanChar, 0, true));
   for (let i = 1; i < totalPlayers; i++) {
     const ch = chars.find(c => !players.some(p => p.char === c));
     players.push(makePlayer(ch, i, false));
   }
   running = true;
-  log(`🍯 蜜熊岛年度大富翁大赛开始！${totalPlayers} 位熊熊参赛（AI 难度：${DIFF_NAME[aiDifficulty]}），最后留下的成为首富！`, "l-card");
+  if (challengeMode) log(`📅 每日挑战 No.${dailyKey()} 开始！全岛同一副牌，比比谁净资产更高！`, "l-card");
+  else if (speedMode) log(`⚡ 速战局开始！${CFG.SPEED_TURNS} 回合后按净资产定胜负！`, "l-card");
+  else log(`🍯 蜜熊岛年度大富翁大赛开始！${totalPlayers} 位熊熊参赛（AI 难度：${DIFF_NAME[aiDifficulty]}），最后留下的成为首富！`, "l-card");
   log(`规则：淘汰制 · 踩自己地可升级(最高Lv3) · 垄断过路费×2 · 前 ${CFG.LOAN_LAPS} 圈破产可借款`, "l-sys");
   updateUI();
   nextTurn();
@@ -1402,5 +1466,6 @@ globalThis.__G = {
   get reportData() { return buildReportData(); },
   get reportPng() { return reportPng; },
   get stats() { return matchStats; },
+  get mode() { return { challengeMode, speedMode, finalWinner, turnCount: matchStats.turns }; },
   drawReportCanvas,
 };
