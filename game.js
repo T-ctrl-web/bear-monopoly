@@ -109,6 +109,9 @@ const matchStats = {
   turns: 0,        // 总回合数
   humanTurns: 0,   // 真人回合数
   peakWealth: CFG.START_CASH,  // 真人净资产峰值
+  firstBuyDone: false,   // v2.4：首次买地成就只弹一次
+  momentKinds: {},       // v2.4：情绪顶点分享每类只弹一次
+  sharePings: 0,         // v2.4：本局已弹出的分享横幅数（上限 2）
 };
 const matchLog = [];   // 完整对局日志（战报挑素材用）
 
@@ -520,6 +523,7 @@ async function charge(payer, amount, payee, reason) {
   log(`💰 ${payer.name} 支付了 ${amount} 熊熊币（${reason}）${payee ? `给 ${payee.name}` : ""}`, amount > 300 ? "l-bad" : "");
   if (payee && /过路费/.test(reason) && amount >= 300) {
     matchStats.drama.push({ emoji: "💰", text: `${payee.name} 收 ${payer.name} ${amount} 过路费`, by: payee.name });
+    if (payee.isHuman && amount >= 500) flashMoment("rent", `💰 一口气收了 ${amount} 过路费！`);
   }
   updateUI();
   return true;
@@ -527,6 +531,7 @@ async function charge(payer, amount, payee, reason) {
 
 async function eliminate(p, creditor, reason) {
   matchStats.outOrder.push({ name: p.name, isHuman: p.isHuman, idx: p.idx });
+  if (creditor && creditor.isHuman) flashMoment("bankrupt", `👑 你把 ${p.name} 逼到破产出局！`);
   p.alive = false;
   (p.props || []).forEach(t => {
     t.owner = creditor && creditor.alive ? creditor : null;
@@ -679,37 +684,84 @@ function drawReportCanvas(d) {
   return cv.toDataURL("image/png");
 }
 
-function showReport() {
+function showReport(opts) {
+  opts = opts || {};
+  const moment = opts.moment || null;   // v2.4：情绪顶点传入的高光文案
   recordWealth();
   const d = buildReportData();
+  if (moment) {
+    d.title = { name: "高光时刻", sub: moment.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, "") };
+    d.drama = [{ emoji: "✨", text: moment, by: d.human.name }].concat(d.drama).slice(0, 3);
+    d.boast = "这一刻，值得晒出来！你来你也行？";
+  }
   const png = drawReportCanvas(d);
   reportPng = png;
   const summary = `称号：${d.title.name}\n净资产：🍯 ${d.worth.toLocaleString()}（第 ${d.rank}/${d.total} 名）\n高光：${d.drama.map(x => x.text).join("；") || "稳扎稳打"}`;
-  modal.innerHTML = `<h3>🏆 本局战报 · ${d.charName}</h3>
+  modal.innerHTML = `<h3>${moment ? "📸 高光战报" : "🏆 本局战报"} · ${d.charName}</h3>
     <div class="report-wrap">${png
       ? `<img class="report-img" src="${png}" alt="战报卡片">`
       : `<div class="report-fallback">${summary.replace(/\n/g, "<br>")}</div>`}</div>
     <div class="report-tip">${png ? "长按图片保存到相册，或点下方按钮下载" : "当前环境不支持生成图片，已显示文字战报"}</div>
     <div class="m-btns">
       <button id="rp-save" class="secondary" ${png ? "" : "disabled"}>保存战报</button>
-      <button id="rp-again">再来一局</button>
+      ${moment
+        ? `<button id="rp-again">继续游戏</button>`
+        : `<button id="rp-again">再来一局</button>`}
     </div>`;
   mask.style.display = "flex";
-  mask.onclick = null;
+  mask.onclick = moment ? (e => { if (e.target === mask) mask.style.display = "none"; }) : null;
   const save = $("rp-save"), again = $("rp-again");
   if (save) save.onclick = () => {
     if (!reportPng) return;
     const a = document.createElement("a");
     a.href = reportPng;
-    a.download = "蜜熊岛战报-" + Date.now() + ".png";
+    a.download = (moment ? "蜜熊岛高光-" : "蜜熊岛战报-") + Date.now() + ".png";
     if (document.body && document.body.appendChild) document.body.appendChild(a);
     if (typeof a.click === "function") a.click();
     if (a.remove) a.remove();
   };
-  if (again) again.onclick = () => location.reload();
+  if (again) again.onclick = () => {
+    if (moment) mask.style.display = "none"; else location.reload();
+  };
 }
 
 let reportPng = null;
+
+/* ---------------- v2.4 首局引导 + 情绪顶点分享 ---------------- */
+let toastTimer = null, momentTimer = null;
+
+/* 轻量提示条：不打断操作，几秒后自动消失 */
+function showToast(text, ms) {
+  const el = $("toast");
+  if (!el || !el.style) return;   // 无头环境兜底
+  el.innerHTML = `<span>${text}</span>`;
+  el.style.display = "block";
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = "none"; }, ms || 3000);
+}
+
+/* 情绪顶点横幅：把分享点前移到爽的那一刻，节流且不强制 */
+function flashMoment(kind, text) {
+  if (!running || matchStats.sharePings >= 2 || matchStats.momentKinds[kind]) return;
+  matchStats.momentKinds[kind] = true;
+  matchStats.sharePings++;
+  const el = $("moment-banner");
+  if (!el || !el.style) return;
+  el.innerHTML = `<span class="mb-text">${text}</span>
+    <button id="mb-share" class="mb-share">📸 晒一下</button>
+    <button id="mb-close" class="mb-close" aria-label="关闭">×</button>`;
+  el.style.display = "flex";
+  const share = $("mb-share"), close = $("mb-close");
+  if (share) share.onclick = () => { hideMoment(); showReport({ moment: text }); };
+  if (close) close.onclick = hideMoment;
+  if (momentTimer) clearTimeout(momentTimer);
+  momentTimer = setTimeout(hideMoment, 6500);
+}
+function hideMoment() {
+  const el = $("moment-banner");
+  if (el && el.style) el.style.display = "none";
+  if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
+}
 
 function checkWinner() {
   const alive = players.filter(p => p.alive);
@@ -768,9 +820,12 @@ async function nextTurn() {
     updateUI();
   }
   if (p.isHuman) {
-    turnBanner.textContent = `🍯 轮到你了：${p.name} · 掷骰子吧！`;
+    turnBanner.textContent = matchStats.humanTurns === 1
+      ? `👆 轮到你了：${p.name} · 点下方金色「掷骰子」开始！`
+      : `🍯 轮到你了：${p.name} · 掷骰子吧！`;
     rollBtn.style.display = "block";
     rollBtn.disabled = false;
+    if (matchStats.humanTurns === 1 && rollBtn.classList) rollBtn.classList.add("guide");
   } else {
     turnBanner.textContent = `🤖 ${p.name} 正在思考…`;
     rollBtn.style.display = "none";
@@ -784,6 +839,7 @@ async function nextTurn() {
 
 async function doRoll(p) {
   rollBtn.disabled = true;
+  if (rollBtn.classList) rollBtn.classList.remove("guide");
   const n = 1 + Math.floor(Math.random() * 6);
   diceEl.textContent = `🎲 ${n}`;
   diceEl.style.display = "block";
@@ -944,6 +1000,10 @@ async function resolveLand(p, t, fromClick, confirmed) {
       p.props.push(t);
       updateTileVisual(t);
       log(`🏠 ${p.name} 买下了「${t.name}」（-${price}）`, "l-good");
+      if (p.isHuman && !matchStats.firstBuyDone) {
+        matchStats.firstBuyDone = true;
+        showToast("🏠 第一块产业到手！踩自己的地能升级收租", 4200);
+      }
     } else if (bought) {
       log(`💸 ${p.name} 想买「${t.name}」但现金不足`, "l-sys");
     }
@@ -1002,6 +1062,7 @@ async function nestFlow(p, t) {
   log(`🃏 ${p.name} 抽到了「${card.name}」`, "l-card");
   if (card.rarity === "稀有" || card.rarity === "史诗") {
     matchStats.drama.push({ emoji: "🃏", text: `${p.name} 抽到${card.rarity}卡「${card.name}」`, by: p.name });
+    if (p.isHuman) flashMoment("card", `${card.rarity === "史诗" ? "🌟" : "✨"} ${p.name} 抽到${card.rarity}卡「${card.name}」！`);
   }
   if (!p.isHuman) {
     await showModal({
@@ -1240,7 +1301,11 @@ function startGame() {
   matchStats.turns = 0;
   matchStats.humanTurns = 0;
   matchStats.peakWealth = CFG.START_CASH;
+  matchStats.firstBuyDone = false;
+  matchStats.momentKinds = {};
+  matchStats.sharePings = 0;
   matchLog.length = 0;
+  hideMoment();
   $("setup").style.display = "none";
   initScene();
   const chars = [...CHARS].sort(() => Math.random() - 0.5);
